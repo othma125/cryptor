@@ -1,5 +1,4 @@
 
-import java.io.IOException;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 
@@ -19,7 +18,7 @@ public class Main {
      * @param args the command line arguments
      */
     // TODO code application logic here
-    public static void main(String[] args) throws UnsupportedLookAndFeelException, IllegalAccessException, ClassNotFoundException, InstantiationException{
+    public static void main(String[] args) throws UnsupportedLookAndFeelException, IllegalAccessException, ClassNotFoundException, InstantiationException, InterruptedException{
         UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         new MainFrame().setVisible(true);
 //        javax.swing.SwingUtilities.invokeLater(new Runnable() {

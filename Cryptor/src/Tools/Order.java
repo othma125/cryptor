@@ -84,9 +84,8 @@ public class Order{
                 order=new short[InputParameters._256];
                 for(short i=0;i<order.length;i++)
                     order[i]=i;
-                Order DefOrder=new Order();
-                for(short i=0;i<DefOrder.AuxilaryTable.length;i++)
-                    new ExchangeMovement(i,i+DefOrder.AuxilaryTable[i]).Execute(order);
+                for(short i=0;i<InputParameters.DefaultOrder.AuxilaryTable.length;i++)
+                    new ExchangeMovement(i,i+InputParameters.DefaultOrder.AuxilaryTable[i]).Execute(order);
             }
             for(short i=0;i<this.AuxilaryTable.length;i++)
                 new ExchangeMovement(i,i+this.AuxilaryTable[i]).Execute(order);

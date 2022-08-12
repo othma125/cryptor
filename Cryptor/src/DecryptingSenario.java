@@ -11,6 +11,9 @@ import java.io.RandomAccessFile;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
 import java.util.Vector;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.IntStream;
 import javax.swing.SwingWorker;
 
 /*
@@ -43,7 +46,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
     }
     @Override
     protected Void doInBackground() throws FileNotFoundException,IOException,InterruptedException{
-        long begining=System.currentTimeMillis();
+//        long begining=System.currentTimeMillis();
         RandomAccessFile InputRAF=new RandomAccessFile(this.InputFile,"r");
         File OutputFile=this.getOutputFile(InputRAF,this.InputFile.getParentFile().getAbsolutePath());
         if(OutputFile==null){
@@ -424,6 +427,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
         }
         return OutputFile;
     }
+    
     private void toDecryptedFile(short k) throws IOException,InterruptedException{
         for(byte i=0;i<InputParameters._8;i++){
             if(InputParameters.BinaryCoding[k][i]){
@@ -487,27 +491,33 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
             }
         }
     }
-    public boolean WrongPassword(){
+    
+    boolean WrongPassword(){
         return this.FW==null;
     }
-    public void Cancel(){
+    
+    void Cancel(){
         this.Cancel=true;
     }
-    public void OpenDecryptedFile(){
+    
+    void OpenDecryptedFile(){
         if(this.OpenDecryptedFile)
             this.FW.OpenOutputFile();
     }
-    public boolean isCanceled(){
+    
+    boolean isCanceled(){
         return this.Cancel;
     }
-    public boolean NoEnoughFreeSpace(){
+    
+    boolean NoEnoughFreeSpace(){
         return this.FW.NoEnoughFreeSpace();
     }
     @Override
     public void propertyChange(PropertyChangeEvent e){
         if("progress".matches(e.getPropertyName()))
             this.setProgress((int)e.getNewValue());
-    }    
+    }  
+    
     private String getOutputFileName(Vector<Short> v){
         String name="";
         short character=0;

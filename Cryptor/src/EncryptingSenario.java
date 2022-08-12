@@ -8,6 +8,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.StringTokenizer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.IntStream;
 import javax.swing.SwingWorker;
 
 /*
@@ -20,7 +23,7 @@ import javax.swing.SwingWorker;
  *
  * @author Othmane
  */
-public class EncryptingSenario extends SwingWorker implements PropertyChangeListener{
+public class EncryptingSenario extends SwingWorker implements PropertyChangeListener,Runnable{
     public boolean Cancel=false;
     private byte ZeroCounter=0;
     private byte Previous=InputParameters.n;
@@ -30,15 +33,17 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
     private final short[] SecondStep;
     private final File InputFile;
     private FileWriter FW=null;
+    
     public EncryptingSenario(File file,char[] password){
         this.InputFile=file;
         StringNumber PW=StringNumber.getPassword(password);
         this.FirstStep=new Order(InputParameters._16,PW).getOrder();
         this.SecondStep=new Order(InputParameters._256,PW).getOrder();
     }
+    
     @Override
     protected Void doInBackground() throws FileNotFoundException,IOException,InterruptedException{
-        long begining=System.currentTimeMillis();
+//        long begining=System.currentTimeMillis();
         String InputFileName=this.InputFile.getName();
         File OutputFile=new File(this.InputFile.getParent()+"\\"+this.getEncryptingFileName(InputFileName)+"cr");
         OutputFile.delete();
@@ -50,12 +55,18 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
         this.FW.addPropertyChangeListener(this);
         this.FW.execute();
         this.toCryptedFile((short)InputFileName.length());
-        short character;
-        for(int i=0;i<InputFileName.length();i++){
-            character=(short)InputFileName.charAt(i);
-            this.toCryptedFile((short)(character%InputParameters._256));
-            this.toCryptedFile((short)(character/InputParameters._256));
-        }
+        IntStream.range(0,InputFileName.length())
+                .map(InputFileName::charAt)
+                .forEach(c->{
+                    try {
+                        this.toCryptedFile((short)((short)c%InputParameters._256));
+                        this.toCryptedFile((short)((short)c/InputParameters._256));
+                    } catch (IOException ex) {
+                        Logger.getLogger(EncryptingSenario.class.getName()).log(Level.SEVERE, null, ex);
+                    } catch (InterruptedException ex) {
+                        Logger.getLogger(EncryptingSenario.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                });
         this.toCryptedFile(InputParameters.EndFileNameCharacter);
         while(this.FW.HasMoreData()){
             if(this.Cancel){
@@ -82,6 +93,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
 //        System.out.println("Encrypting time = "+(System.currentTimeMillis()-begining)+" ms");
         return null;
     }
+    
     private void toCryptedFile(short UnsignedByte) throws IOException,InterruptedException{
         for(byte i=0;i<InputParameters._8;i++){
             if(InputParameters.BinaryCoding[UnsignedByte][i]){
@@ -107,9 +119,10 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
             }
         }
     }
-    private void toCryptedFile(byte k) throws IOException,InterruptedException{
-        byte a=InputParameters.Points[this.FirstStep[k]].X;
-        byte b=InputParameters.Points[this.FirstStep[k]].Y;
+    
+    private void toCryptedFile(byte Byte) throws IOException,InterruptedException{
+        byte a=InputParameters.Points[this.FirstStep[Byte]].X;
+        byte b=InputParameters.Points[this.FirstStep[Byte]].Y;
         for(byte j=0;j<a;j++){
             this.Index++;
             if(this.Index==InputParameters._8){
@@ -145,20 +158,25 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
             }
         }
     }
-    public void Cancel(){
+    
+    void Cancel(){
         this.Cancel=true;
     }
-    public boolean isCanceled(){
+    
+    boolean isCanceled(){
         return this.Cancel;
     }
+    
     @Override
     public void propertyChange(PropertyChangeEvent e){
         if("progress".matches(e.getPropertyName()))
             this.setProgress((int)e.getNewValue());
     }    
-    public boolean NoEnoughFreeSpace(){
+    
+    boolean NoEnoughFreeSpace(){
         return this.FW.NoEnoughFreeSpace();
     }
+    
     private String getEncryptingFileName(String InputFileName){
         StringTokenizer st=new StringTokenizer(InputFileName,".");
         if(st.countTokens()==1)

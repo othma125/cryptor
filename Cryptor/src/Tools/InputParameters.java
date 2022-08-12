@@ -15,7 +15,7 @@ import java.util.Scanner;
  *
  * @author Othmane
  */
-public class InputParameters {
+public class InputParameters{
     public static final byte n=4;
     public static final byte m=3;
     public static final byte _8=8;
@@ -34,12 +34,34 @@ public class InputParameters {
     public static StringNumber[] MaxScales=new StringNumber[2];
     public static Point[] Points;
     public static StringNumber DefaultCode;
-    public InputParameters(){
+    public static Order DefaultOrder;
+    public InputParameters() throws InterruptedException{
         InputParameters.Points=new Point[16];
         for(byte i=0;i<InputParameters.Points.length;i++)
             InputParameters.Points[i]=new Point(i,InputParameters.n);
         for(byte i=0;i<InputParameters._8;i++)
             InputParameters.Power_2[i]=(short)Math.pow(2,InputParameters._8-1-i);
+        InputParameters.Scales=new StringNumber[2][];
+        InputParameters.Scales[0]=new StringNumber[11];
+        InputParameters.Scales[1]=new StringNumber[255];
+        InputParameters.Scales[0][0]=InputParameters.Scales[1][0]=new StringNumber(1);
+        Scanner scanner=null;
+        try{
+            scanner=new Scanner(new File("InputParameters"));
+        }        
+        catch(FileNotFoundException e){
+            InputParameters.InputParameterFileNotFound=true;
+            return;
+        }
+        InputParameters.EndFileNameCharacter=Short.valueOf(scanner.nextLine());
+        for(short i=1;i<InputParameters.Scales[0].length;i++)
+            InputParameters.Scales[0][i]=new StringNumber(scanner.nextLine());
+        InputParameters.MaxScales[0]=new StringNumber(scanner.nextLine());
+        for(short i=1;i<InputParameters.Scales[1].length;i++)
+            InputParameters.Scales[1][i]=new StringNumber(scanner.nextLine());
+        InputParameters.DefaultCode=new StringNumber(scanner.nextLine());
+        Thread t=new Thread(()->InputParameters.DefaultOrder=new Order());
+        t.start();
         for(short i=0;i<InputParameters._256;i++){
             String s=Integer.toBinaryString(i);
             int k=s.length()-1;
@@ -50,26 +72,8 @@ public class InputParameters {
                     break;
             }
         }
-        InputParameters.Scales=new StringNumber[2][];
-        InputParameters.Scales[0]=new StringNumber[11];
-        InputParameters.Scales[1]=new StringNumber[255];
-        InputParameters.Scales[0][0]=InputParameters.Scales[1][0]=new StringNumber(1);
-        Scanner fluxEntree=null;
-        try{
-            fluxEntree=new Scanner(new File("InputParameters"));
-        }        
-        catch(FileNotFoundException e){
-            InputParameters.InputParameterFileNotFound=true;
-            return;
-        }
-        InputParameters.EndFileNameCharacter=Short.valueOf(fluxEntree.nextLine());
-        for(short i=1;i<InputParameters.Scales[0].length;i++)
-            InputParameters.Scales[0][i]=new StringNumber(fluxEntree.nextLine());
-        InputParameters.MaxScales[0]=new StringNumber(fluxEntree.nextLine());
-        for(short i=1;i<InputParameters.Scales[1].length;i++)
-            InputParameters.Scales[1][i]=new StringNumber(fluxEntree.nextLine());
-        InputParameters.DefaultCode=new StringNumber(fluxEntree.nextLine());
-        InputParameters.MaxScales[1]=new StringNumber(fluxEntree.nextLine());
-        fluxEntree.close();
+        InputParameters.MaxScales[1]=new StringNumber(scanner.nextLine());
+        scanner.close();
+        t.join();
     }
 }

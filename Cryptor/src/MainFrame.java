@@ -10,6 +10,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileFilter;
 
 /*
  * To change this license header, choose License Headers in Project Properties.
@@ -25,12 +26,12 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     final char[] Password="password".toCharArray();
     final String Name="Cryptor";
     final String DesktopPath=System.getProperty("user.home")+"\\Desktop";
-    JFileChooser fc;
+    JFileChooser FC;
     File SelectedFile;
     EncryptingSenario EncSen=null;
     DecryptingSenario DecSen=null;
     Image Logo=Toolkit.getDefaultToolkit().getImage("Icon.gif");
-    public MainFrame(){
+    public MainFrame() throws InterruptedException{
         new InputParameters();
         this.initComponents();
         this.setTitle(this.Name);
@@ -63,6 +64,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         if(InputParameters.InputParameterFileNotFound){
             this.setEnabled(false);
             this.jDialog_InputParameterFileNotFound.setVisible(true);
+            return;
         }
     }
     @SuppressWarnings("unchecked")
@@ -348,7 +350,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
 
         EncryptingPassword2.setText("jPasswordField2");
 
-        EncryptingBrowserButton.setText("Browser");
+        EncryptingBrowserButton.setText("Browse");
         EncryptingBrowserButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 EncryptingBrowserButtonActionPerformed(evt);
@@ -403,7 +405,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
 
         DecryptingPassword.setText("jPasswordField3");
 
-        DecryptingBrowserButton.setText("Browser");
+        DecryptingBrowserButton.setText("Browse");
         DecryptingBrowserButton.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 DecryptingBrowserButtonActionPerformed(evt);
@@ -426,9 +428,8 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             .addGroup(DecryptingPanelLayout.createSequentialGroup()
                 .addGap(32, 32, 32)
                 .addGroup(DecryptingPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(DecryptingPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                        .addComponent(DecryptingPassword, javax.swing.GroupLayout.Alignment.LEADING, javax.swing.GroupLayout.PREFERRED_SIZE, 116, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addComponent(jLabel2, javax.swing.GroupLayout.Alignment.LEADING))
+                    .addComponent(DecryptingPassword, javax.swing.GroupLayout.PREFERRED_SIZE, 116, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addComponent(jLabel2)
                     .addComponent(jCheckBox_OpenFile))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 110, Short.MAX_VALUE)
                 .addGroup(DecryptingPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -574,9 +575,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             return;
         this.DecryptingButton.setEnabled(false);
         this.DecryptingPassword.setText("");
-        this.fc=new JFileChooser();
-        this.fc.setCurrentDirectory(new File(this.DesktopPath));
-        javax.swing.filechooser.FileFilter ff=new javax.swing.filechooser.FileFilter(){
+        if(this.FC==null)
+            this.FC=new JFileChooser();
+        this.FC.removeChoosableFileFilter(this.FC.getAcceptAllFileFilter());
+        this.FC.setFileFilter(new FileFilter(){
             @Override
             public boolean accept(File f){
                 return f.isDirectory() || f.getName().endsWith(".cr");
@@ -585,12 +587,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             public String getDescription(){
                 return "File .cr";
             }
-        };
-        this.fc.removeChoosableFileFilter(fc.getAcceptAllFileFilter());
-        this.fc.setFileFilter(ff);
-        int returnVal=this.fc.showOpenDialog(this);
-        if(returnVal==JFileChooser.APPROVE_OPTION){
-            this.SelectedFile=this.fc.getSelectedFile();
+        });
+        this.FC.setCurrentDirectory(new File(this.DesktopPath));
+        if(this.FC.showOpenDialog(this)==JFileChooser.APPROVE_OPTION){
+            this.SelectedFile=this.FC.getSelectedFile();
             try(RandomAccessFile RAF=new RandomAccessFile(this.SelectedFile,"r")){
                 if(RAF.length()>0){
                     this.DecryptingButton.setEnabled(true);
@@ -636,11 +636,13 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.EncryptingButton.setEnabled(false);
         this.EncryptingPassword1.setText("");
         this.EncryptingPassword2.setText("");
-        this.fc=new JFileChooser();
-        this.fc.setCurrentDirectory(new File(this.DesktopPath));
-        int returnVal=this.fc.showOpenDialog(this);
-        if(returnVal==JFileChooser.APPROVE_OPTION){
-            this.SelectedFile=this.fc.getSelectedFile();
+        if(this.FC==null)
+            this.FC=new JFileChooser();
+        else
+            this.FC.removeChoosableFileFilter(this.FC.getAcceptAllFileFilter());
+        this.FC.setCurrentDirectory(new File(this.DesktopPath));
+        if(this.FC.showOpenDialog(this)==JFileChooser.APPROVE_OPTION){
+            this.SelectedFile=this.FC.getSelectedFile();
             try(RandomAccessFile RAF=new RandomAccessFile(this.SelectedFile,"r")){
                 if(RAF.length()>0){
                     this.EncryptingButton.setEnabled(true);
@@ -690,7 +692,6 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.EncryptingPassword2.setText("");
         this.jDialog_PasswordsDoNotMatch.setVisible(false);
     }//GEN-LAST:event_jDialog_PasswordsDoNotMatchWindowClosing
-
     private void jButton_CancelActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_CancelActionPerformed
         // TODO add your handling code here:
         if(this.jTabbedPane.getSelectedIndex()==0)
@@ -698,21 +699,18 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         else
             this.DecSen.Cancel();
     }//GEN-LAST:event_jButton_CancelActionPerformed
-
     private void jButton_NoEnoughFreeSpaceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_NoEnoughFreeSpaceActionPerformed
         // TODO add your handling code here:
-        this.jTabbedPane.setEnabled(true);
         this.setEnabled(true);
+        this.jTabbedPane.setEnabled(true);
         this.jDialog_NoEnoughFreeSpace.setVisible(false);
     }//GEN-LAST:event_jButton_NoEnoughFreeSpaceActionPerformed
-
     private void jDialog_NoEnoughFreeSpaceWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_jDialog_NoEnoughFreeSpaceWindowClosing
         // TODO add your handling code here:
-        this.jTabbedPane.setEnabled(true);
         this.setEnabled(true);
+        this.jTabbedPane.setEnabled(true);
         this.jDialog_NoEnoughFreeSpace.setVisible(false);
     }//GEN-LAST:event_jDialog_NoEnoughFreeSpaceWindowClosing
-
     private void jButton__ChosenFileEmtyActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton__ChosenFileEmtyActionPerformed
         // TODO add your handling code here:
         this.jDialog_ChosenFileEmty.setVisible(false);

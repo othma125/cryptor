@@ -27,14 +27,12 @@ public class FileWriter extends SwingWorker{
     private File OutputFile;
     private RandomAccessFile OutputRAF=null;
     private final Vector<byte[]> OutputData=new Vector<>();
+    
     public FileWriter(File InputFile,File OF,boolean decrypt) throws IOException, InterruptedException{
         this.OutputFile=OF;
         this.FR=new FileReader(new RandomAccessFile(InputFile,"r"));
-        long FileSize;
-        if(decrypt)
-            FileSize=this.FR.getFileSize()-2*this.OutputFile.getName().length()-2;
-        else
-            FileSize=this.FR.getFileSize()+2*InputFile.getName().length()+2;
+        long FileSize=this.FR.getFileSize();
+        FileSize+=(decrypt)?-2*this.OutputFile.getName().length()-2:2*InputFile.getName().length()+2;
         if(FileSize<=InputFile.getFreeSpace()){
             this.FR.execute();
             this.OutputRAF=new RandomAccessFile(this.OutputFile,"rw");
@@ -47,12 +45,16 @@ public class FileWriter extends SwingWorker{
         else
             this.FR.CloseFile();
     }
-    public void WriteByte(byte n) throws IOException, InterruptedException{
-        this.OutputData.lastElement()[this.Index]=n;
+    
+    void WriteByte(byte Byte) throws IOException, InterruptedException{
+        this.OutputData.lastElement()[this.Index]=Byte;
         this.Index++;
         if(this.Index==this.OutputData.lastElement().length){
-            this.OutputData.addElement(new byte[InputParameters.MaxLength]);
-            this.Index=0;
+            synchronized(this){
+                this.OutputData.addElement(new byte[InputParameters.MaxLength]);
+                this.notify();
+                this.Index=0;
+            }
         }
     }
     @Override
@@ -61,23 +63,22 @@ public class FileWriter extends SwingWorker{
         while(!this.Cancel){
             if(this.OutputRAF.length()-this.OutputRAF.getFilePointer()<=InputParameters.MaxLength)
                 break;
-            while(!this.EndWriting && this.OutputData.size()==1){
-                if(this.Cancel)
-                    break;
-                Thread.sleep(0,10);
-            }
-            if(Math.random()<0.01d){
-                x=(int)(this.OutputRAF.getFilePointer()*this.Constant);
-                if(x>this.getProgress()){
-                    this.setProgress(x);
-//                    System.out.println(x+"%= "+this.OutputRAF.getFilePointer());
+            synchronized(this){
+                while(!this.EndWriting  && !this.Cancel && this.OutputData.size()==1)
+                    this.wait();
+                if(Math.random()<0.01d){
+                    x=(int)(this.OutputRAF.getFilePointer()*this.Constant);
+                    if(x>this.getProgress()){
+                        this.setProgress(x);
+    //                    System.out.println(x+"%= "+this.OutputRAF.getFilePointer());
+                    }
                 }
+                this.FR.PauseReading();
+                this.OutputRAF.write(this.OutputData.firstElement());
+                this.OutputData.removeElementAt(0);
+                if(this.OutputData.size()<=2)
+                    this.FR.ResumeReading();
             }
-            this.FR.PauseReading();
-            this.OutputRAF.write(this.OutputData.firstElement());
-            this.OutputData.removeElementAt(0);
-            if(this.OutputData.size()<=2)
-                this.FR.PlayReading();
         }
         if(!this.Cancel){
             while(!this.EndWriting)
@@ -98,30 +99,39 @@ public class FileWriter extends SwingWorker{
         }
         return null;
     }
-    public void Cancel(){
+    
+    void Cancel(){
         this.Cancel=true;
         this.FR.Cancel();
     }
-    public short ReadUnsignedByte() throws IOException, InterruptedException{
+    
+    short ReadUnsignedByte() throws IOException, InterruptedException{
         return this.FR.ReadUnsignedByte();
     }
-    public boolean HasMoreData(){
+    
+    boolean HasMoreData(){
         return this.FR.HasMoreData();
     }
-    public void WaitAWhile() throws InterruptedException{
-        while(!this.OutputData.isEmpty())
-            Thread.sleep(0,1);
-    }
-    public void Pause() throws InterruptedException {
+//    public void WaitAWhile() throws InterruptedException{
+//        synchronized(this.OutputData){
+//            while(!this.OutputData.isEmpty())
+//                Thread.sleep(0,1);
+//        }
+//    }
+    
+    void Pause() throws InterruptedException {
         this.FR.Pause();
     }
-    public void EndWriting(){
+    
+    void EndWriting(){
         this.EndWriting=true;
     }
-    public boolean NoEnoughFreeSpace(){
+    
+    boolean NoEnoughFreeSpace(){
         return this.OutputRAF==null;
     }
-    public void OpenOutputFile(){
+    
+    void OpenOutputFile(){
         this.OpenOutputFile=true;
     }
 }
