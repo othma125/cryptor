@@ -98,7 +98,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
         for(byte i=0;i<InputParameters._8;i++){
             if(InputParameters.BinaryCoding[UnsignedByte][i]){
                 if(this.Previous<InputParameters.n){
-                    this.toCryptedFile(InputParameters.Matrix[this.Previous][this.ZeroCounter]);
+                    this.toCryptedFile(InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]);
                     this.Previous=InputParameters.n;
                 }
                 else
@@ -109,7 +109,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
                 this.ZeroCounter++;
                 if(this.ZeroCounter==InputParameters.m){
                     if(this.Previous<InputParameters.n){
-                        this.toCryptedFile(InputParameters.Matrix[this.Previous][this.ZeroCounter]);
+                        this.toCryptedFile(InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]);
                         this.Previous=InputParameters.n;
                     }
                     else
@@ -121,9 +121,9 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
     }
     
     private void toCryptedFile(byte Byte) throws IOException,InterruptedException{
-        byte a=InputParameters.Points[this.FirstStep[Byte]].X;
-        byte b=InputParameters.Points[this.FirstStep[Byte]].Y;
-        for(byte j=0;j<a;j++){
+        byte x=InputParameters.Points[this.FirstStep[Byte]].X;
+        byte y=InputParameters.Points[this.FirstStep[Byte]].Y;
+        for(byte j=0;j<x;j++){
             this.Index++;
             if(this.Index==InputParameters._8){
                 this.FW.WriteByte((byte)this.SecondStep[this.OutputByte]);
@@ -131,7 +131,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        if(a<InputParameters.m){
+        if(x<InputParameters.m){
             this.OutputByte+=InputParameters.Power_2[this.Index];
             this.Index++;
             if(this.Index==InputParameters._8){
@@ -140,7 +140,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        for(byte j=0;j<b;j++){
+        for(byte j=0;j<y;j++){
             this.Index++;
             if(this.Index==InputParameters._8){
                 this.FW.WriteByte((byte)this.SecondStep[this.OutputByte]);
@@ -148,7 +148,7 @@ public class EncryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        if(b<InputParameters.m){
+        if(y<InputParameters.m){
             this.OutputByte+=InputParameters.Power_2[this.Index];
             this.Index++;
             if(this.Index==InputParameters._8){

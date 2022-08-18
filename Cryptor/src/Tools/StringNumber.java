@@ -2,7 +2,8 @@ package Tools;
 
 
 import java.util.Objects;
-import java.util.Vector;
+import java.util.ArrayList;
+import java.util.stream.IntStream;
 
 /*
  * To change this template, choose Tools | Templates
@@ -15,37 +16,7 @@ import java.util.Vector;
  */
 public class StringNumber {
     public String Value;
-    public StringNumber(){
-        this.Value="0";
-    }
-    @Override
-    public String toString(){
-        return this.Value;
-    }
-    @Override
-    public StringNumber clone(){
-        return new StringNumber(this);
-    }
-//    public void ToByteArray(Vector<Byte> v){
-//        this.ToByteArray(v,InputParameters._256);
-//    }
-//    public void ToByteArray(Vector<Byte> v,int base){
-//        if(this.EqualsTo(new StringNumber()))
-//            return;
-//        Division d=new Division(this,new StringNumber(base));
-//        v.addElement((byte)(int)Integer.valueOf(d.Rest.Value));
-//        d.Quotient.ToByteArray(v,base);
-//    }
-    public static StringNumber getPassword(char[] password){
-        StringNumber p=new StringNumber();
-        StringNumber power=new StringNumber(1);
-        for(int i=0;i<password.length;i++){
-            if(i>0)
-                power=power.Multiplication(new StringNumber(InputParameters._256));
-            p=p.Addition(new StringNumber((int)password[i]).Multiplication(power));
-        }
-        return p;
-    }
+    
     public StringNumber(byte[] password){
         this.Value="0";
         StringNumber power=new StringNumber(1);
@@ -59,59 +30,102 @@ public class StringNumber {
             this.Value=new StringNumber(this).Addition(new StringNumber(x).Multiplication(power)).Value;
         }
     }
+    
     public StringNumber(String valeur){
         this.Value=valeur;
     }
+    
     public StringNumber(StringNumber NewStringNumber){
         this.Value=NewStringNumber.Value;
     }
-    private Vector<Character> toVector(){
-        Vector<Character> v=new Vector<>();
-        for(int i=0;i<this.Value.length();i++)
-            v.addElement(this.Value.charAt(i));
-        return v;
+    
+    public StringNumber(){
+        this.Value="0";
     }
-    public boolean EqualsTo(StringNumber x){
-        if(this.Value.length()==x.Value.length()){
-            Vector<Character> v1=this.toVector();
-            Vector<Character> v2=x.toVector();
-            for(int i=0;i<this.Value.length();i++){
-                if(!Objects.equals(v1.elementAt(i),v2.elementAt(i)))
-                    return false;
-            }
-            return true;
+    
+    @Override
+    public String toString(){
+        return this.Value;
+    }
+    
+    @Override
+    public StringNumber clone(){
+        return new StringNumber(this);
+    }
+    
+//    void ToByteArray(Vector<Byte> v){
+//        this.ToByteArray(v,InputParameters._256);
+//    }
+    
+//    void ToByteArray(Vector<Byte> v,int base){
+//        if(this.EqualsTo(new StringNumber()))
+//            return;
+//        Division d=new Division(this,new StringNumber(base));
+//        v.addElement((byte)(int)Integer.valueOf(d.Rest.Value));
+//        d.Quotient.ToByteArray(v,base);
+//    }
+    
+    public static StringNumber getPassword(char[] password){
+        StringNumber p=new StringNumber();
+        StringNumber power=new StringNumber(1);
+        for(int i=0;i<password.length;i++){
+            if(i>0)
+                power=power.Multiplication(new StringNumber(InputParameters._256));
+            p=p.Addition(new StringNumber((int)password[i]).Multiplication(power));
         }
-        else return false;
+        return p;
     }
-    public boolean GreaterOrEqualsTo(StringNumber x){
+    
+    private ArrayList<Character> toArrayList(){
+        ArrayList<Character> list=new ArrayList<>();
+        for(int i=0;i<this.Value.length();i++)
+            list.add(this.Value.charAt(i));
+        return list;
+    }
+    
+    boolean EqualsTo(StringNumber x){
         if(this.Value.length()==x.Value.length()){
-            Vector<Character> v1=this.toVector();
-            Vector<Character> v2=x.toVector();
+            ArrayList<Character> list1=this.toArrayList();
+            ArrayList<Character> list2=x.toArrayList();
+            return IntStream.range(0,this.Value.length())
+                            .allMatch(i->Objects.equals(list1.get(i),list2.get(i)));
+        }
+        else
+            return false;
+    }
+    
+    boolean GreaterOrEqualsTo(StringNumber x){
+        if(this.Value.length()==x.Value.length()){
+            ArrayList<Character> list1=this.toArrayList();
+            ArrayList<Character> list2=x.toArrayList();
             for(int i=0;i<this.Value.length();i++){
-                if(Integer.valueOf(v1.elementAt(i).toString())>Integer.valueOf(v2.elementAt(i).toString()))
+                if(Integer.valueOf(list1.get(i).toString())>Integer.valueOf(list2.get(i).toString()))
                     return true;
-                else if(Integer.valueOf(v1.elementAt(i).toString())<Integer.valueOf(v2.elementAt(i).toString()))
+                else if(Integer.valueOf(list1.get(i).toString())<Integer.valueOf(list2.get(i).toString()))
                     return false;
             }
             return true;
         }
         else return this.Value.length()>x.Value.length();
     }
-    public boolean GreaterTo(StringNumber x){
+    
+    boolean GreaterThan(StringNumber x){
         if(this.Value.length()==x.Value.length()){
-            Vector<Character> v1=this.toVector();
-            Vector<Character> v2=x.toVector();
+            ArrayList<Character> list1=this.toArrayList();
+            ArrayList<Character> list2=x.toArrayList();
             for(int i=0;i<this.Value.length();i++){
-                if(Integer.valueOf(v1.elementAt(i).toString())>Integer.valueOf(v2.elementAt(i).toString()))
+                if(Integer.valueOf(list1.get(i).toString())>Integer.valueOf(list2.get(i).toString()))
                     return true;
-                else if(Integer.valueOf(v1.elementAt(i).toString())<Integer.valueOf(v2.elementAt(i).toString()))
+                else if(Integer.valueOf(list1.get(i).toString())<Integer.valueOf(list2.get(i).toString()))
                     return false;
             }
             return false;
         }
-        else return this.Value.length()>x.Value.length();
+        else
+            return this.Value.length()>x.Value.length();
     }
-    public StringNumber Power(int n){
+    
+    StringNumber Power(int n){
         if(n==0)
             return new StringNumber(1);
         else if(n==1)
@@ -123,30 +137,31 @@ public class StringNumber {
             return x;
         }
     }
-    public StringNumber Soustraction(StringNumber x){
+    
+    StringNumber Soustraction(StringNumber x){
         String resultat="";
-        int ajout=0;
-        Vector<Character> v1=this.toVector();
-        Vector<Character> v2=x.toVector();
+        int stored_value=0;
+        ArrayList<Character> list1=this.toArrayList();
+        ArrayList<Character> list2=x.toArrayList();
         do{
             int k1=0,k2=0;
-            if(!v1.isEmpty()){
-                k1=Integer.valueOf(v1.lastElement().toString());
-                v1.remove(v1.size()-1);
+            if(!list1.isEmpty()){
+                k1=Integer.valueOf(list1.get(list1.size()-1).toString());
+                list1.remove(list1.size()-1);
             }
-            if(!v2.isEmpty()){
-                k2=Integer.valueOf(v2.lastElement().toString());
-                v2.remove(v2.size()-1);
+            if(!list2.isEmpty()){
+                k2=Integer.valueOf(list2.get(list2.size()-1).toString());
+                list2.remove(list2.size()-1);
             }
-            int somme=k1-k2-ajout;
-            ajout=0;
+            int somme=k1-k2-stored_value;
+            stored_value=0;
             if(somme<0){
                 somme+=10;
-                ajout++;
+                stored_value++;
             }
-            if(!v1.isEmpty() || (v1.isEmpty() && somme!=0))
+            if(!list1.isEmpty() || (list1.isEmpty() && somme!=0))
                 resultat=String.valueOf(somme)+resultat;
-        }while(!v1.isEmpty());
+        }while(!list1.isEmpty());
         String r="";
         boolean condition=false;
         for(int i=0;i<resultat.length();i++){
@@ -164,17 +179,17 @@ public class StringNumber {
     public StringNumber Addition(StringNumber x){
         String resultat="";
         String ajout=null;
-        Vector<Character> v1=this.toVector();
-        Vector<Character> v2=x.toVector();
+        ArrayList<Character> list1=this.toArrayList();
+        ArrayList<Character> list2=x.toArrayList();
         do{
             int k1=0,k2=0,k3=0;
-            if(!v1.isEmpty()){
-                k1=Integer.valueOf(v1.lastElement().toString());
-                v1.remove(v1.size()-1);
+            if(!list1.isEmpty()){
+                k1=Integer.valueOf(list1.get(list1.size()-1).toString());
+                list1.remove(list1.size()-1);
             }
-            if(!v2.isEmpty()){
-                k2=Integer.valueOf(v2.lastElement().toString());
-                v2.remove(v2.size()-1);
+            if(!list2.isEmpty()){
+                k2=Integer.valueOf(list2.get(list2.size()-1).toString());
+                list2.remove(list2.size()-1);
             }
             if(ajout!=null)
                 k3=Integer.valueOf(ajout);
@@ -187,16 +202,15 @@ public class StringNumber {
                 ajout=null;
                 resultat=String.valueOf(somme%10)+resultat;
             }
-        }while(!v1.isEmpty() || !v2.isEmpty() || ajout!=null);
+        }while(!list1.isEmpty() || !list2.isEmpty() || ajout!=null);
         return new StringNumber(resultat);
     }
-    public static StringNumber Factorial(int n){
-        if(n==0)
-            return new StringNumber(1);
-        else
-            return new StringNumber(n).Multiplication(Factorial(n-1));
+    
+    static StringNumber Factorial(int n){
+        return (n==0)?new StringNumber(1):new StringNumber(n).Multiplication(Factorial(n-1));
     }
-    public StringNumber Multiplication(StringNumber x){
+    
+    StringNumber Multiplication(StringNumber x){
         if(this.Value.length()>x.Value.length())
             return x.Multiplication(this);
         StringNumber zero=new StringNumber();
@@ -223,13 +237,16 @@ public class StringNumber {
             return resultat;
         }
     }
+    
     public StringNumber(long l){
         this.Value=Long.toString(l);
     }
+    
     public StringNumber(int x){
         this.Value=Integer.toString(x);
     }
-    public long toInteger(){
+    
+    long toInteger(){
         return Long.valueOf(this.Value);
     }
 }

@@ -10,10 +10,9 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
-import java.util.Vector;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.IntStream;
 import javax.swing.SwingWorker;
 
 /*
@@ -44,6 +43,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
         this.FirstStep=Order.Inverse(new Order(InputParameters._256,PW).getOrder());
         this.SecondStep=Order.Inverse(new Order(InputParameters._16,PW).getOrder());
     }
+    
     @Override
     protected Void doInBackground() throws FileNotFoundException,IOException,InterruptedException{
 //        long begining=System.currentTimeMillis();
@@ -98,11 +98,13 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
 //        System.out.println("Decrypting time = "+(System.currentTimeMillis()-begining)+" ms");
         return null;
     }
+    
     private File getOutputFile(RandomAccessFile InputRAF,String OutputPath) throws InterruptedException,IOException{
         byte a,b;
         boolean c=true;
-        short OutputFileNameLength=Short.MAX_VALUE,x;
-        Vector<Short> v=new Vector<>();
+        short OutputFileNameLength=Short.MAX_VALUE;
+        short x;
+        ArrayList<Short> NameArray=new ArrayList<>();
         String OutputFileName;
         File OutputFile=null;
         while(OutputFile==null && InputRAF.getFilePointer()<InputRAF.length()){
@@ -110,8 +112,8 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
             for(byte y=0;y<InputParameters._8;y++){
                 if(InputParameters.BinaryCoding[x][y]){
                     if(this.Previous<InputParameters.n){
-                        a=InputParameters.Points[this.SecondStep[InputParameters.Matrix[this.Previous][this.ZeroCounter]]].X;
-                        b=InputParameters.Points[this.SecondStep[InputParameters.Matrix[this.Previous][this.ZeroCounter]]].Y;
+                        a=InputParameters.Points[this.SecondStep[InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]]].X;
+                        b=InputParameters.Points[this.SecondStep[InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]]].Y;
                         for(byte j=0;j<a;j++){
                             this.Index++;
                             if(this.Index==InputParameters._8){
@@ -121,24 +123,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                 }
                                 else if(OutputFile==null){
                                     if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                        if(v.size()==2*OutputFileNameLength){
-                                            OutputFileName=this.getOutputFileName(v);
+                                        if(NameArray.size()==2*OutputFileNameLength){
+                                            OutputFileName=this.getOutputFileName(NameArray);
                                             try{
                                                 OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                             }catch(InvalidPathException e){
                                                 return null;
                                             }
                                             OutputFile.delete();
-                                            v.removeAllElements();
+                                            NameArray.clear();
                                             this.Index=0;
                                             this.OutputByte=0;
                                         }
                                         else
-                                            v.addElement(this.OutputByte);
+                                            NameArray.add(this.OutputByte);
                                     }
                                     else{
-                                        v.addElement(this.OutputByte);
-                                        if(v.size()>2*OutputFileNameLength)
+                                        NameArray.add(this.OutputByte);
+                                        if(NameArray.size()>2*OutputFileNameLength)
                                             return null;
                                     }
                                 }
@@ -158,24 +160,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                 }
                                 else if(OutputFile==null){
                                     if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                        if(v.size()==2*OutputFileNameLength){
-                                            OutputFileName=this.getOutputFileName(v);
+                                        if(NameArray.size()==2*OutputFileNameLength){
+                                            OutputFileName=this.getOutputFileName(NameArray);
                                             try{
                                                 OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                             }catch(InvalidPathException e){
                                                 return null;
                                             }
                                             OutputFile.delete();
-                                            v.removeAllElements();
+                                            NameArray.clear();
                                             this.Index=0;
                                             this.OutputByte=0;
                                         }
                                         else
-                                            v.addElement(this.OutputByte);
+                                            NameArray.add(this.OutputByte);
                                     }
                                     else{
-                                        v.addElement(this.OutputByte);
-                                        if(v.size()>2*OutputFileNameLength)
+                                        NameArray.add(this.OutputByte);
+                                        if(NameArray.size()>2*OutputFileNameLength)
                                             return null;
                                     }
                                 }
@@ -194,24 +196,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                 }
                                 else if(OutputFile==null){
                                     if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                        if(v.size()==2*OutputFileNameLength){
-                                            OutputFileName=this.getOutputFileName(v);
+                                        if(NameArray.size()==2*OutputFileNameLength){
+                                            OutputFileName=this.getOutputFileName(NameArray);
                                             try{
                                                 OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                             }catch(InvalidPathException e){
                                                 return null;
                                             }
                                             OutputFile.delete();
-                                            v.removeAllElements();
+                                            NameArray.clear();
                                             this.Index=0;
                                             this.OutputByte=0;
                                         }
                                         else
-                                            v.addElement(this.OutputByte);
+                                            NameArray.add(this.OutputByte);
                                     }
                                     else{
-                                        v.addElement(this.OutputByte);
-                                        if(v.size()>2*OutputFileNameLength)
+                                        NameArray.add(this.OutputByte);
+                                        if(NameArray.size()>2*OutputFileNameLength)
                                             return null;
                                     }
                                 }
@@ -231,24 +233,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                 }
                                 else if(OutputFile==null){
                                     if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                        if(v.size()==2*OutputFileNameLength){
-                                            OutputFileName=this.getOutputFileName(v);
+                                        if(NameArray.size()==2*OutputFileNameLength){
+                                            OutputFileName=this.getOutputFileName(NameArray);
                                             try{
                                                 OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                             }catch(InvalidPathException e){
                                                 return null;
                                             }
                                             OutputFile.delete();
-                                            v.removeAllElements();
+                                            NameArray.clear();
                                             this.Index=0;
                                             this.OutputByte=0;
                                         }
                                         else
-                                            v.addElement(this.OutputByte);
+                                            NameArray.add(this.OutputByte);
                                     }
                                     else{
-                                        v.addElement(this.OutputByte);
-                                        if(v.size()>2*OutputFileNameLength)
+                                        NameArray.add(this.OutputByte);
+                                        if(NameArray.size()>2*OutputFileNameLength)
                                             return null;
                                     }
                                 }
@@ -268,8 +270,8 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                     this.ZeroCounter++;
                     if(this.ZeroCounter==InputParameters.m){
                         if(this.Previous<InputParameters.n){
-                            a=InputParameters.Points[this.SecondStep[InputParameters.Matrix[this.Previous][this.ZeroCounter]]].X;
-                            b=InputParameters.Points[this.SecondStep[InputParameters.Matrix[this.Previous][this.ZeroCounter]]].Y;
+                            a=InputParameters.Points[this.SecondStep[InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]]].X;
+                            b=InputParameters.Points[this.SecondStep[InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]]].Y;
                             for(byte j=0;j<a;j++){
                                 this.Index++;
                                 if(this.Index==InputParameters._8){
@@ -279,24 +281,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                     }
                                     else if(OutputFile==null){
                                         if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                            if(v.size()==2*OutputFileNameLength){
-                                                OutputFileName=this.getOutputFileName(v);
+                                            if(NameArray.size()==2*OutputFileNameLength){
+                                                OutputFileName=this.getOutputFileName(NameArray);
                                                 try{
                                                     OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                                 }catch(InvalidPathException e){
                                                     return null;
                                                 }
                                                 OutputFile.delete();
-                                                v.removeAllElements();
+                                                NameArray.clear();
                                                 this.Index=0;
                                                 this.OutputByte=0;
                                             }
                                             else
-                                                v.addElement(this.OutputByte);
+                                                NameArray.add(this.OutputByte);
                                         }
                                         else{
-                                            v.addElement(this.OutputByte);
-                                            if(v.size()>2*OutputFileNameLength)
+                                            NameArray.add(this.OutputByte);
+                                            if(NameArray.size()>2*OutputFileNameLength)
                                                 return null;
                                         }
                                     }
@@ -316,24 +318,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                     }
                                     else if(OutputFile==null){
                                         if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                            if(v.size()==2*OutputFileNameLength){
-                                                OutputFileName=this.getOutputFileName(v);
+                                            if(NameArray.size()==2*OutputFileNameLength){
+                                                OutputFileName=this.getOutputFileName(NameArray);
                                                 try{
                                                     OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                                 }catch(InvalidPathException e){
                                                     return null;
                                                 }
                                                 OutputFile.delete();
-                                                v.removeAllElements();
+                                                NameArray.clear();
                                                 this.Index=0;
                                                 this.OutputByte=0;
                                             }
                                             else
-                                                v.addElement(this.OutputByte);
+                                                NameArray.add(this.OutputByte);
                                         }
                                         else{
-                                            v.addElement(this.OutputByte);
-                                            if(v.size()>2*OutputFileNameLength)
+                                            NameArray.add(this.OutputByte);
+                                            if(NameArray.size()>2*OutputFileNameLength)
                                                 return null;
                                         }
                                     }
@@ -352,24 +354,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                     }
                                     else if(OutputFile==null){
                                         if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                            if(v.size()==2*OutputFileNameLength){
-                                                OutputFileName=this.getOutputFileName(v);
+                                            if(NameArray.size()==2*OutputFileNameLength){
+                                                OutputFileName=this.getOutputFileName(NameArray);
                                                 try{
                                                     OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                                 }catch(InvalidPathException e){
                                                     return null;
                                                 }
                                                 OutputFile.delete();
-                                                v.removeAllElements();
+                                                NameArray.clear();
                                                 this.Index=0;
                                                 this.OutputByte=0;
                                             }
                                             else
-                                                v.addElement(this.OutputByte);
+                                                NameArray.add(this.OutputByte);
                                         }
                                         else{
-                                            v.addElement(this.OutputByte);
-                                            if(v.size()>2*OutputFileNameLength)
+                                            NameArray.add(this.OutputByte);
+                                            if(NameArray.size()>2*OutputFileNameLength)
                                                 return null;
                                         }
                                     }
@@ -389,24 +391,24 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                                     }
                                     else if(OutputFile==null){
                                         if(this.OutputByte==InputParameters.EndFileNameCharacter){
-                                            if(v.size()==2*OutputFileNameLength){
-                                                OutputFileName=this.getOutputFileName(v);
+                                            if(NameArray.size()==2*OutputFileNameLength){
+                                                OutputFileName=this.getOutputFileName(NameArray);
                                                 try{
                                                     OutputFile=Paths.get(OutputPath+"\\"+OutputFileName).toFile();
                                                 }catch(InvalidPathException e){
                                                     return null;
                                                 }
                                                 OutputFile.delete();
-                                                v.removeAllElements();
+                                                NameArray.clear();
                                                 this.Index=0;
                                                 this.OutputByte=0;
                                             }
                                             else
-                                                v.addElement(this.OutputByte);
+                                                NameArray.add(this.OutputByte);
                                         }
                                         else{
-                                            v.addElement(this.OutputByte);
-                                            if(v.size()>2*OutputFileNameLength)
+                                            NameArray.add(this.OutputByte);
+                                            if(NameArray.size()>2*OutputFileNameLength)
                                                 return null;
                                         }
                                     }
@@ -429,10 +431,10 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
     }
     
     private void toDecryptedFile(short k) throws IOException,InterruptedException{
-        for(byte i=0;i<InputParameters._8;i++){
+        for(byte i=0;i<InputParameters._8;i++)
             if(InputParameters.BinaryCoding[k][i]){
                 if(this.Previous<InputParameters.n){
-                    this.toDecryptedFile(InputParameters.Matrix[this.Previous][this.ZeroCounter]);
+                    this.toDecryptedFile(InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]);
                     this.Previous=InputParameters.n;
                 }
                 else
@@ -443,7 +445,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                 this.ZeroCounter++;
                 if(this.ZeroCounter==InputParameters.m){
                     if(this.Previous<InputParameters.n){
-                        this.toDecryptedFile(InputParameters.Matrix[this.Previous][this.ZeroCounter]);
+                        this.toDecryptedFile(InputParameters.IndexMatrix[this.Previous][this.ZeroCounter]);
                         this.Previous=InputParameters.n;
                     }
                     else
@@ -451,12 +453,12 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                     this.ZeroCounter=0;
                 }
             }
-        }
     }
+    
     private void toDecryptedFile(byte k) throws IOException,InterruptedException{
-        byte a=InputParameters.Points[this.SecondStep[k]].X;
-        byte b=InputParameters.Points[this.SecondStep[k]].Y;
-        for(byte j=0;j<a;j++){
+        byte x=InputParameters.Points[this.SecondStep[k]].X;
+        byte y=InputParameters.Points[this.SecondStep[k]].Y;
+        for(byte j=0;j<x;j++){
             this.Index++;
             if(this.Index==InputParameters._8){
                 this.FW.WriteByte((byte)this.OutputByte);
@@ -464,7 +466,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        if(a<InputParameters.m){
+        if(x<InputParameters.m){
             this.OutputByte+=InputParameters.Power_2[this.Index];
             this.Index++;
             if(this.Index==InputParameters._8){
@@ -473,7 +475,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        for(byte j=0;j<b;j++){
+        for(byte j=0;j<y;j++){
             this.Index++;
             if(this.Index==InputParameters._8){
                 this.FW.WriteByte((byte)this.OutputByte);
@@ -481,7 +483,7 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
                 this.OutputByte=0;
             }
         }
-        if(b<InputParameters.m){
+        if(y<InputParameters.m){
             this.OutputByte+=InputParameters.Power_2[this.Index];
             this.Index++;
             if(this.Index==InputParameters._8){
@@ -518,15 +520,15 @@ public class DecryptingSenario extends SwingWorker implements PropertyChangeList
             this.setProgress((int)e.getNewValue());
     }  
     
-    private String getOutputFileName(Vector<Short> v){
+    private String getOutputFileName(ArrayList<Short> v){
         String name="";
-        short character=0;
+        short c=0;
         for(int i=0;i<v.size();i++){
             if(i%2==0)
-                character=v.elementAt(i);
+                c=v.get(i);
             else{
-                character+=InputParameters._256*v.elementAt(i);
-                name+=(char)character;
+                c+=InputParameters._256*v.get(i);
+                name+=(char)c;
             }
         }
 //        System.out.println(name);

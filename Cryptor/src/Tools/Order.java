@@ -1,5 +1,8 @@
 package Tools;
 
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
 
 
 /*
@@ -29,11 +32,12 @@ public class Order{
                                     null,
                                     null,
                                     {14,15}};
-    public short[] AuxilaryTable=null;  
+    public short[] AuxilaryArray=null;  
     public short Length;
+    
     public Order(short length,StringNumber PasswordCode){
         this.Length=length;
-        this.AuxilaryTable=new short[this.Length-1];
+        this.AuxilaryArray=new short[this.Length-1];
         if(!PasswordCode.EqualsTo(new StringNumber())){
             byte k;
             StringNumber x;
@@ -42,11 +46,11 @@ public class Order{
                 x=new Division(PasswordCode,InputParameters.MaxScales[k]).Rest;
                 byte l=(byte)InputParameters.Scales[k].length;
                 l--;
-                for(short i=(short)(this.AuxilaryTable.length-1);i>-1;i--){
+                for(short i=(short)(this.AuxilaryArray.length-1);i>-1;i--){
                     if(Order.SecretMatrix[i]==null)
                         continue;
                     Division d=new Division(x,InputParameters.Scales[k][l]);
-                    this.AuxilaryTable[i]=(short)(Order.SecretMatrix[i][(short)d.Quotient.toInteger()]-i);
+                    this.AuxilaryArray[i]=(short)(Order.SecretMatrix[i][(short)d.Quotient.toInteger()]-i);
                     x=d.Rest;
                     l--;
                 }
@@ -54,52 +58,51 @@ public class Order{
             else{
                 k=1;
                 x=new Division(PasswordCode,InputParameters.MaxScales[k]).Rest;
-                for(int i=this.AuxilaryTable.length-1;i>-1;i--){
+                for(int i=this.AuxilaryArray.length-1;i>-1;i--){
                     Division d=new Division(x,InputParameters.Scales[k][i]);
-                    this.AuxilaryTable[i]=(short)d.Quotient.toInteger();
+                    this.AuxilaryArray[i]=(short)d.Quotient.toInteger();
                     x=d.Rest;
                 }
             }
         }
     }  
+    
     public Order(){
         this.Length=InputParameters._256;
         if(!InputParameters.DefaultCode.EqualsTo(new StringNumber())){
-            this.AuxilaryTable=new short[this.Length-1];
+            this.AuxilaryArray=new short[this.Length-1];
             StringNumber x=InputParameters.DefaultCode.clone();
-            this.AuxilaryTable=new short[this.Length-1];
-            for(int i=this.AuxilaryTable.length-1;i>-1;i--){
+            this.AuxilaryArray=new short[this.Length-1];
+            for(int i=this.AuxilaryArray.length-1;i>-1;i--){
                 Division d=new Division(x,InputParameters.Scales[1][i]);
-                this.AuxilaryTable[i]=(short)d.Quotient.toInteger();
+                this.AuxilaryArray[i]=(short)d.Quotient.toInteger();
                 x=d.Rest;
             }
         }
     }
+    
     public short[] getOrder(){
         short[] order=null;
-        if(this.AuxilaryTable!=null){
+        if(this.AuxilaryArray!=null){
             if(this.Length==16)
                 order=Order.DefaultOrder.clone();
             else{
                 order=new short[InputParameters._256];
                 for(short i=0;i<order.length;i++)
                     order[i]=i;
-                for(short i=0;i<InputParameters.DefaultOrder.AuxilaryTable.length;i++)
-                    new ExchangeMovement(i,i+InputParameters.DefaultOrder.AuxilaryTable[i]).Execute(order);
+                for(short i=0;i<InputParameters.DefaultOrder.AuxilaryArray.length;i++)
+                    new ExchangeMovement(i,i+InputParameters.DefaultOrder.AuxilaryArray[i]).Execute(order);
             }
-            for(short i=0;i<this.AuxilaryTable.length;i++)
-                new ExchangeMovement(i,i+this.AuxilaryTable[i]).Execute(order);
+            for(short i=0;i<this.AuxilaryArray.length;i++)
+                new ExchangeMovement(i,i+this.AuxilaryArray[i]).Execute(order);
         }
         return order;
     } 
-    public static short[] Inverse(short[] tab){
-        short[] t=new short[tab.length];
-        for(short i=0;i<tab.length;i++)
-            for(short j=0;j<tab.length;j++)
-                if(tab[j]==i){
-                    t[i]=j;
-                    break;
-                }
+    
+    public static short[] Inverse(short[] array){
+        short[] t=new short[array.length];
+        IntStream.range(0,array.length)
+                .forEach(i->t[i]=(short)IntStream.range(0,array.length).reduce(-1,(k,l)->(k==-1 && array[l]==i)?l:k));
         return t;
     }
 }

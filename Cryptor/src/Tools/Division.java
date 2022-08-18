@@ -14,7 +14,7 @@ public class Division {
     public StringNumber Quotient;
     public StringNumber Rest;
     public Division(StringNumber x,StringNumber y){
-        if(y.GreaterTo(x)){
+        if(y.GreaterThan(x)){
             this.Quotient=new StringNumber();
             this.Rest=x;
         }
@@ -29,7 +29,7 @@ public class Division {
                 selection+=((Character)x.Value.charAt(j)).toString();
             int i=taille;
             StringNumber a=new StringNumber(selection);
-            if(y.GreaterTo(a)){
+            if(y.GreaterThan(a)){
                 i++;
                 a.Value+=((Character)x.Value.charAt(taille)).toString();
             }
