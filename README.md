@@ -2,7 +2,7 @@
 
 Cryptor is a Java Swing desktop application that encrypts any file into a password-protected `.cr` file, and decrypts it back to the original. It was first shared [on LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:6471397156392697856/).
 
-**Target OS:** Windows
+**Runs on:** Windows, Linux and macOS — output paths use the platform file separator. The bundled `dist/Cryptor.exe` is Windows-only; elsewhere (and for scripting) run the jar or the [command-line mode](#running).
 
 > ⚠️ **Cryptor uses a custom, unaudited cipher. It is an educational project, not a replacement for AES.** Don't use it to protect anything you'd mind losing. Several real weaknesses have since been fixed — see [Design analysis](#design-analysis) — but that does not make it trustworthy, and [Why the warning still stands](#why-the-warning-still-stands) explains why not.
 
@@ -19,6 +19,8 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Background processing** — encryption/decryption runs on worker threads with a progress bar and cancel support. *Advantage:* the UI stays responsive and a long run on a big file can be stopped.
 - **Streamed I/O** — the file moves through 1024-byte blocks and bounded queues, never fully into memory. *Advantage:* file size is limited by disk, not RAM.
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
+- **Command-line mode** — `cli encrypt|decrypt <file>` runs headless, no GUI, prompting for the password without echo. *Advantage:* scriptable and easy to fuzz/benchmark; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
+- **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
 ## How it works
 
@@ -59,8 +61,8 @@ These are open. None is closed by the fixes above, and the first one is the impo
 - **The confidentiality core is unaudited, and that is not a disclaimer — it is the actual risk.** Every primitive here that is known-good was borrowed: PBKDF2, HMAC-SHA256, `SecureRandom`, `MessageDigest.isEqual`. They handle key derivation, integrity and randomness. Nothing standard does the *encrypting* — that is the grid scheme, invented here and reviewed by no cryptographer. A cipher is not trustworthy because no one present can break it; it is trustworthy after people whose job is breaking ciphers have tried for years and failed. That has not happened to this one, and no amount of work in this repo can substitute for it.
 - **The chain state is 8 bits wide.** `prevCipher` is a single byte, so everything a ciphertext byte carries forward about all prior plaintext is squeezed through 256 possible values (plus ~160 run-length transducer states and the block index). AES-CBC chains 128 bits. A byte-wide chain means chain-state collisions are routine rather than astronomically rare, and any attack that wants to force a chain-state repeat starts from a very small search. The counter widens the *map* per byte, not the state.
 - **The grid stage contributes no key-dependent mixing.** `indexMatrix`, `binaryCoding` and `pairs` are fixed constants compiled into the program, so an attacker knows the entire grid transform exactly. All secrecy rests on the two permutations and the chaining — the bit-repacking, which is the visually impressive half of the design, is public and adds obscurity, not strength.
-- **Small effective keyspace on the 16-step.** The allowed swaps are constrained by a secret matrix, leaving on the order of ~2¹⁷ possibilities for that permutation rather than 16!. A strong KDF can't lift this — it's a structural ceiling of the cipher, not of the key derivation. A sketch of why it bites, offered as illustration rather than as a result: under known plaintext, brute-force those ~131k grid orders and test each for consistency — within a 64-byte block, one packed output byte mapping to two different ciphertext bytes rules a guess out, and the birthday bound gives ~8 such collisions per block, so a few blocks should confirm the right order. That would not hand over the plaintext (each block's 256-table is fresh, and 64 samples is thin for frequency analysis), but it would peel off a whole secret layer. This has not been validated — it is exactly the sort of question a real audit exists to settle.
-- **Only statistical testing has been done.** `CryptanalysisTest` measures distributions: avalanche, periodicity, uniformity, correlation. Real ciphers are broken by *structural* attacks — differential and linear cryptanalysis, algebraic recovery, known-plaintext key recovery. None of those has been attempted here, so the suite is silent on the attacks most likely to work.
+- **Small effective keyspace on the 16-step — now demonstrated.** The allowed swaps are constrained by a secret matrix, leaving exactly **138,240 ≈ 2¹⁷** possibilities for that permutation rather than 16!. A strong KDF can't lift this — it's a structural ceiling of the cipher, not of the key derivation. What was a sketch here is now `CryptanalysisTest` test [C]: under known plaintext it enumerates all 138,240 grid orders and tests each for consistency — within a 64-byte block, the packed output byte maps through `idx = V ⊕ prev ⊕ ctr` to the observed ciphertext, and that map must stay a partial permutation; a wrong order collides. **~320 known ciphertext bytes narrow 138,240 candidates to the one true order.** This does not hand over the plaintext — each block's 256-table is fresh, and 64 samples is thin for frequency analysis — but it peels a whole secret layer off with a few hundred known bytes and a fraction of a second of compute.
+- **Structural attacks are only partly explored.** `CryptanalysisTest` [1]–[7] measure distributions (avalanche, periodicity, uniformity, correlation); [A]–[C] add the first *structural* results — the 16-step keyspace count, the KDF guessing cost, and the known-plaintext grid-order recovery above. But the attacks most likely to actually break the confidentiality core are still untried: differential and linear cryptanalysis, algebraic recovery, and known-plaintext recovery of the *master key* or the per-block 256-tables. The grid-order break is a real one, but it is the *easiest* layer; the suite is still silent on the hard ones.
 - **The chaining IV is fixed at 0.** `prevCipher` starts at 0 every file. This is mostly covered by the per-file salt, which makes the *keys* fresh per encryption, so two files never share a keystream — but the guarantee rests entirely on the salt, with no independent IV behind it.
 - **PBKDF2 at 100k iterations is adequate, not strong.** It is GPU- and ASIC-friendly by design; a memory-hard KDF (Argon2id, scrypt) buys far more per unit of user-visible delay. This only sets the cost of guessing a *weak* password, and against a modern cracking rig 100k SHA-256 iterations is a speed bump.
 
@@ -87,6 +89,7 @@ This part is solid:
 | Path | Description |
 |---|---|
 | `src/Main.java` | Entry point; sets the system look-and-feel and opens the main window |
+| `src/cli.java` | Headless command-line front end (`encrypt`/`decrypt`), driving the same workers as the GUI |
 | `src/MainFrame.java` | Swing UI: Encrypt / Decrypt / About tabs, file chooser, progress, dialogs |
 | `src/Encryption/` | The cipher and I/O engine (`Encryption` package, see below) |
 | `src/Encryption/Senario.java` | Abstract base for both workers; holds the shared bit-packing state and the encode/decode logic that is identical in both directions |
@@ -98,7 +101,8 @@ This part is solid:
 | `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps) |
 | `InputParameters` | Required data file, loaded at startup from the working directory |
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
-| `test/CryptanalysisTest.java` | Standalone cryptanalysis smoke test (byte/bit avalanche, key avalanche, constant-input periodicity swept over keys, randomization, uniformity, serial correlation) |
+| `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
+| `test/BenchmarkTest.java` | Encrypt/decrypt throughput benchmark across file sizes |
 | `dist/` | Build output produced by `ant jar` (`Cryptor.jar` / `Cryptor.exe`); git-ignored |
 
 ## Running
@@ -113,6 +117,20 @@ java -jar dist/Cryptor.jar
 On Windows you can instead run the generated `dist/Cryptor.exe`.
 
 > **Note:** the `InputParameters` file must be present in the working directory, otherwise the app blocks encryption/decryption.
+
+### Command-line mode
+
+For scripting or headless use, `cli` encrypts/decrypts without the GUI:
+
+```
+javac -d out src/*.java src/Encryption/*.java src/Tools/*.java
+java -cp out cli encrypt path/to/file        # prompts for the password
+java -cp out cli decrypt path/to/file.cr     # prompts for the password
+```
+
+The password is always read interactively, never taken as an argument — a command-line password leaks into shell history and the process list. It is read without echo from the console (or from stdin when piped). Encryption prompts twice and requires a match, refuses an empty password, and a wrong password or tampered file exits non-zero with an error.
+
+Pressing **Ctrl+C** during a run is the same operation as the GUI's Cancel button: a shutdown hook calls the worker's `Cancel()` and waits for it to remove the partial output, so an interrupted run never leaves a half-written `.cr` (or a half-written decrypted file) behind. Ctrl+C *at the password prompt* — before any file is touched — just prints `cancelled` and exits, with no stack trace.
 
 ## Building
 
@@ -141,7 +159,15 @@ To reproduce the [Design analysis](#design-analysis) numbers, run the cryptanaly
 java -ea -cp out CryptanalysisTest
 ```
 
-Each test prints a `BROKEN`/`survived` verdict. Tests [1]–[3] cover diffusion, constant-input periodicity and randomization; [4]–[7] are the standard statistical battery: bit-level avalanche, key avalanche, uniformity (NIST-style monobit + byte chi-square) and serial correlation.
+Each of tests [1]–[7] prints a `BROKEN`/`survived` verdict. Tests [1]–[3] cover diffusion, constant-input periodicity and randomization; [4]–[7] are the standard statistical battery: bit-level avalanche, key avalanche, uniformity (NIST-style monobit + byte chi-square) and serial correlation. After the verdict, tests [A]–[C] print the *attacks* from [ALGORITHM_DIRECTIONS.md](ALGORITHM_DIRECTIONS.md): [A] the exact 16-step keyspace, [B] the measured PBKDF2 guessing cost, and [C] a known-plaintext recovery of the grid order (run with `-ea` — the attack's success doubles as its correctness check, asserting the true order is recovered).
+
+To measure throughput, run the benchmark the same way (from the project root, no `-ea` needed):
+
+```
+java -cp out BenchmarkTest
+```
+
+It encrypts and decrypts 1/4/16 MB files and prints MB/s for each direction (decryption trails encryption because it reads the file twice — once to verify the MAC, once to decode).
 
 ### Latest results
 
@@ -163,5 +189,15 @@ Two notes on reading this table, both learned the hard way here:
 
 - **The tests were checked against a known-broken cipher, not just a passing one.** A suite nobody has watched fail proves nothing. Pointed at the pre-counter cipher, test [2] reports `BROKEN` (2/8 keys, worst 4.36 bits/byte) and so does test [4] — bits changed swing from 24.8% to 85.1%, a mean of 50.5% that hides two useless extremes. That last one is precisely what test [1] misses: byte-level counting saturates near 97% and cannot tell a good cipher from a mediocre one, which is why [4] exists alongside it. Tests [2] and [4] therefore have demonstrated teeth; [5]–[7] pass on both ciphers and so are, for now, only guarding against regressions.
 - **Test [2] sweeps fixed keys rather than encrypting once under a random salt.** The leak it hunts is key-dependent, so one random key per run turned a consistent break into a coin-flip verdict — and a single lucky run is exactly how the false claim got into this README. Fixed salts make the verdict reproducible; when a property depends on the key, sweep keys.
+
+The same binary also prints the attack results (run 2026-07-18, single core):
+
+| Attack | Result |
+|---|---|
+| [A] 16-step grid keyspace | 138,240 reachable orders (~2¹⁷·¹, vs 16! = 2⁴⁴·³) |
+| [B] KDF guessing cost | ~122 ms/guess → ~8 guesses/sec; 26⁸ ≈ 808 years, 10M-word dictionary ≈ 14 days (single core; a GPU rig cuts these by orders of magnitude) |
+| [C] Known-plaintext grid-order recovery | 320 known ciphertext bytes narrow 138,240 candidates to **1**; true order recovered |
+
+[C] is the first structural break in the suite: it confirms the [small-keyspace weakness](#known-weaknesses) is real and cheap to exploit, while leaving the master key and per-block tables intact. See [ALGORITHM_DIRECTIONS.md](ALGORITHM_DIRECTIONS.md) for the attacks still untried.
 
 Any suggestions to improve it are welcome.

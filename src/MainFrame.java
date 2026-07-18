@@ -30,7 +30,7 @@ import javax.swing.filechooser.FileFilter;
 public class MainFrame extends javax.swing.JFrame implements PropertyChangeListener {
 
     final String Name = "Cryptor";
-    final String DesktopPath = System.getProperty("user.home") + "\\Desktop";
+    final String DesktopPath = System.getProperty("user.home") + File.separator + "Desktop";
     JFileChooser FC;
     File SelectedFile;
     EncryptingSenario EncSen = null;

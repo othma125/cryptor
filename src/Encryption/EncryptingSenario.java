@@ -74,7 +74,7 @@ public class EncryptingSenario extends Senario {
     @Override
     protected Void doInBackground() throws FileNotFoundException, IOException, InterruptedException {
         String InputFileName = this.inputFile.getName();
-        File OutputFile = new File(this.inputFile.getParent() + "\\" + this.getEncryptingFileName(InputFileName) + "cr");
+        File OutputFile = new File(this.inputFile.getParent() + File.separator + this.getEncryptingFileName(InputFileName) + "cr");
         OutputFile.delete();
         this.FW = new FileWriter(this.inputFile, OutputFile, false);
         if (this.NoEnoughFreeSpace()) {

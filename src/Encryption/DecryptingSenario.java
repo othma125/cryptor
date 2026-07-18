@@ -317,7 +317,7 @@ public class DecryptingSenario extends Senario {
         else if (this.decodedOutputFile == null) {
             if (this.outputByte == InputParameters.endFileNameCharacter && this.nameArray.size() == 2 * this.nameLength) {
                 try {
-                    this.decodedOutputFile = Paths.get(this.outputPath + "\\" + this.getOutputFileName(this.nameArray)).toFile();
+                    this.decodedOutputFile = Paths.get(this.outputPath + File.separator + this.getOutputFileName(this.nameArray)).toFile();
                 } catch (InvalidPathException e) {
                     this.headerInvalid = true;
                     return;
