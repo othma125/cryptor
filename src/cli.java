@@ -16,10 +16,16 @@ import java.util.Arrays;
  * display), so there is one cipher, not two.
  *
  * <pre>
- * java -cp out cli encrypt &lt;file&gt;
- * java -cp out cli decrypt &lt;file.cr&gt;
+ * java -cp out cli encrypt &lt;file&gt; [&lt;file&gt; ...]
+ * java -cp out cli decrypt &lt;file.cr&gt; [&lt;file.cr&gt; ...]
  * </pre>
  *
+ * Multiple files may be given (e.g. a drag-and-drop of a whole selection); the
+ * password is asked once and applied to every file in the batch. A file that
+ * fails (missing, wrong password, no free space) is reported and skipped, and
+ * the run finishes the rest, exiting non-zero if any file failed.
+ *
+ * <p>
  * The password is always read interactively, never taken as an argument (a
  * command-line password leaks into shell history and the process list). It is
  * read without echo from the console, or from stdin when piped. Encryption asks
@@ -28,25 +34,20 @@ import java.util.Arrays;
  *
  * <p>
  * Ctrl+C during a run is the same operation as the GUI's Cancel button: a
- * shutdown hook calls {@link Senario#Cancel()} and waits for the worker to stop
- * and delete its partial output, so an interrupted run never leaves a
- * half-written file behind.
+ * shutdown hook calls {@link Senario#Cancel()} on the file currently being
+ * processed and waits for the worker to stop and delete its partial output, so
+ * an interrupted run never leaves a half-written file behind.
  *
  * @author Othmane
  */
 public class cli {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2 || (!args[0].equals("encrypt") && !args[0].equals("decrypt"))) {
-            System.err.println("usage: java -cp out cli encrypt|decrypt <file>");
+        if (args.length < 2 || (!args[0].equals("encrypt") && !args[0].equals("decrypt"))) {
+            System.err.println("usage: java -cp out cli encrypt|decrypt <file> [<file> ...]");
             System.exit(2);
         }
         boolean encrypt = args[0].equals("encrypt");
-        File file = new File(args[1]).getAbsoluteFile();   // absolute so getParent() is never null on a bare name
-        if (!file.isFile()) {
-            System.err.println("no such file: " + file);
-            System.exit(1);
-        }
 
         new InputParameters();
         if (InputParameters.inputParameterFileNotFound) {
@@ -54,8 +55,14 @@ public class cli {
             System.exit(1);
         }
 
+        File[] files = new File[args.length - 1];
+        for (int i = 1; i < args.length; i++) {
+            files[i - 1] = new File(args[i]).getAbsoluteFile();  // absolute so getParent() is never null on a bare name
+        }
+
+        // One password for the whole batch, read before any file is touched.
+        char[] pw = readPassword("Enter password: ");
         if (encrypt) {
-            char[] pw = readPassword("Enter password: ");
             if (pw.length == 0) {
                 System.err.println("refusing to encrypt with an empty password.");
                 System.exit(1);
@@ -65,44 +72,63 @@ public class cli {
                 System.err.println("passwords do not match.");
                 System.exit(1);
             }
-            EncryptingSenario enc = new EncryptingSenario(file, pw);
-            Thread hook = installCancelHook(enc);
-            enc.execute();
-            enc.get();
-            if (enc.isCanceled())   // Ctrl+C: the hook prints the message and cleans up
-                return;
-            removeHook(hook);
-            if (enc.NoEnoughFreeSpace()) {
-                System.err.println("not enough free space for the output.");
-                System.exit(1);
-            }
-            System.out.println("encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr"));
-        } else {
-            char[] pw = readPassword("Enter password: ");
-            DecryptingSenario dec = new DecryptingSenario(file, pw, false);
-            Thread hook = installCancelHook(dec);
-            dec.execute();
-            dec.get();
-            if (dec.isCanceled())
-                return;
-            removeHook(hook);
-            if (dec.WrongPassword()) {
-                System.err.println("wrong password or corrupted/tampered file.");
-                System.exit(1);
-            }
-            System.out.println("decrypted " + file.getName());
         }
+
+        // The cancel hook always targets whichever file is being processed right now.
+        final Senario[] current = new Senario[1];
+        Thread hook = installCancelHook(current);
+
+        int failures = 0;
+        for (File file : files) {
+            if (!file.isFile()) {
+                System.err.println("no such file: " + file);
+                failures++;
+                continue;
+            }
+            if (encrypt) {
+                EncryptingSenario enc = new EncryptingSenario(file, pw);
+                current[0] = enc;
+                enc.execute();
+                enc.get();
+                if (enc.isCanceled())   // Ctrl+C: the hook prints the message and cleans up
+                    return;
+                if (enc.NoEnoughFreeSpace()) {
+                    System.err.println("not enough free space for: " + file.getName());
+                    failures++;
+                    continue;
+                }
+                System.out.println("encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr"));
+            } else {
+                DecryptingSenario dec = new DecryptingSenario(file, pw, false);
+                current[0] = dec;
+                dec.execute();
+                dec.get();
+                if (dec.isCanceled())
+                    return;
+                if (dec.WrongPassword()) {
+                    System.err.println("wrong password or corrupted/tampered file: " + file.getName());
+                    failures++;
+                    continue;
+                }
+                System.out.println("decrypted " + file.getName());
+            }
+        }
+
+        removeHook(hook);
+        if (failures > 0)
+            System.exit(1);
     }
 
     /**
-     * Registers a Ctrl+C (SIGINT) handler that cancels the worker exactly as the
-     * GUI's Cancel button does, then blocks until the worker has stopped and
-     * removed its partial output before the JVM exits.
+     * Registers a Ctrl+C (SIGINT) handler that cancels the file currently being
+     * processed exactly as the GUI's Cancel button does, then blocks until the
+     * worker has stopped and removed its partial output before the JVM exits.
      */
-    private static Thread installCancelHook(final Senario worker) {
+    private static Thread installCancelHook(final Senario[] current) {
         Thread hook = new Thread(() -> {
-            if (worker.isDone())
-                return;                       // finished normally during shutdown: nothing to cancel
+            Senario worker = current[0];
+            if (worker == null || worker.isDone())
+                return;                       // between files, or finished normally: nothing to cancel
             worker.Cancel();
             try {
                 worker.get();                 // wait for the worker to delete the partial output
