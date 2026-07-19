@@ -124,11 +124,13 @@ For scripting or headless use, `cli` encrypts/decrypts without the GUI:
 
 ```
 javac -d out src/*.java src/Encryption/*.java src/Tools/*.java
-java -cp out cli encrypt path/to/file [more files ...]   # prompts for the password
-java -cp out cli decrypt path/to/file.cr [more .cr ...]  # prompts for the password
+java -cp out cli encrypt [-r] path/to/file-or-dir [more ...]   # prompts for the password
+java -cp out cli decrypt [-r] path/to/file-or-dir [more ...]   # prompts for the password
 ```
 
 Several files can be given in one call (handy for a drag-and-drop selection): the password is asked once and applied to the whole batch, and a file that fails — missing, wrong password, no free space — is reported and skipped while the rest continue, with a non-zero exit if any failed.
+
+A **directory** argument expands to the files inside it — directly inside by default, or in every subfolder with **`-r`** (`--recursive`), placed right after the command. `encrypt` takes every file except existing `.cr` ones — re-encrypting `foo.cr` would strip and re-add `.cr` and overwrite it — and `decrypt` takes only `.cr` files, skipping the rest. So `cli encrypt mydir` encrypts a whole folder, `cli decrypt -r mydir` decrypts every `.cr` under a tree, in one call. An explicit file argument is always processed as given, whatever its name.
 
 A batch is processed in parallel on a `ForkJoinPool` sized to the number of CPU cores — but never more than three files at once, because each file drives three worker threads (crypto + reader + writer) out of a shared pool of ten, and a fourth concurrent file could starve a reader and deadlock. A single progress bar on stderr shows the mean progress across the batch (the same 0–100 the GUI shows for one file), and the per-file results are printed together once it fills, so they never tear the bar mid-draw.
 

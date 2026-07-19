@@ -56,11 +56,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class cli {
 
     public static void main(String[] args) throws Exception {
+        String usage = "usage: java -cp out cli encrypt|decrypt [-r] <file|dir> [<file|dir> ...]";
         if (args.length < 2 || (!args[0].equals("encrypt") && !args[0].equals("decrypt"))) {
-            System.err.println("usage: java -cp out cli encrypt|decrypt <file> [<file> ...]");
+            System.err.println(usage);
             System.exit(2);
         }
         boolean encrypt = args[0].equals("encrypt");
+        // Optional -r/--recursive walks directory arguments into their subfolders.
+        boolean recursive = args[1].equals("-r") || args[1].equals("--recursive");
+        int start = recursive ? 2 : 1;
+        if (start >= args.length) {
+            System.err.println(usage);
+            System.exit(2);
+        }
 
         new InputParameters();
         if (InputParameters.inputParameterFileNotFound) {
@@ -68,9 +76,33 @@ public class cli {
             System.exit(1);
         }
 
-        File[] files = new File[args.length - 1];
-        for (int i = 1; i < args.length; i++) {
-            files[i - 1] = new File(args[i]).getAbsoluteFile();  // absolute so getParent() is never null on a bare name
+        // A directory argument expands to the files inside it (top-level only,
+        // or every subfolder with -r). Encrypt takes every file but the .cr ones
+        // — re-encrypting foo.cr would strip and re-add .cr, overwriting the
+        // source — and decrypt takes only .cr files, skipping the rest.
+        java.util.List<File> fileList = new java.util.ArrayList<>();
+        for (int i = start; i < args.length; i++) {
+            File f = new File(args[i]).getAbsoluteFile();  // absolute so getParent() is never null on a bare name
+            if (f.isDirectory()) {
+                if (recursive) {
+                    try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(f.toPath())) {
+                        walk.filter(java.nio.file.Files::isRegularFile)
+                                .map(java.nio.file.Path::toFile)
+                                .filter(c -> c.getName().endsWith(".cr") != encrypt)
+                                .forEach(fileList::add);
+                    }
+                } else {
+                    File[] inside = f.listFiles(c -> c.isFile() && c.getName().endsWith(".cr") != encrypt);
+                    if (inside != null)
+                        java.util.Collections.addAll(fileList, inside);
+                }
+            } else
+                fileList.add(f);   // an explicit file is processed as given, whatever its name
+        }
+        File[] files = fileList.toArray(new File[0]);
+        if (files.length == 0) {
+            System.err.println("no files to " + args[0] + ".");
+            System.exit(1);
         }
 
         // One password for the whole batch, read before any file is touched.
