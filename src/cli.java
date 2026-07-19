@@ -8,6 +8,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Headless command-line front end, so the cipher is scriptable and fuzz/bench
@@ -21,9 +26,17 @@ import java.util.Arrays;
  * </pre>
  *
  * Multiple files may be given (e.g. a drag-and-drop of a whole selection); the
- * password is asked once and applied to every file in the batch. A file that
- * fails (missing, wrong password, no free space) is reported and skipped, and
- * the run finishes the rest, exiting non-zero if any file failed.
+ * password is asked once and applied to every file in the batch. The batch runs
+ * on a {@link ForkJoinPool} sized to the CPU, so several files encrypt at once
+ * on a multi-core machine. A file that fails (missing, wrong password, no free
+ * space) is reported and skipped, and the run finishes the rest, exiting
+ * non-zero if any file failed.
+ *
+ * <p>
+ * A single aggregate progress bar (the mean of every file's progress) is drawn
+ * to stderr while the batch runs, the same 0..100 the GUI's progress bar shows
+ * for one file. Per-file results are printed together once the bar is full, so
+ * they never tear the bar mid-draw.
  *
  * <p>
  * The password is always read interactively, never taken as an argument (a
@@ -34,9 +47,9 @@ import java.util.Arrays;
  *
  * <p>
  * Ctrl+C during a run is the same operation as the GUI's Cancel button: a
- * shutdown hook calls {@link Senario#Cancel()} on the file currently being
- * processed and waits for the worker to stop and delete its partial output, so
- * an interrupted run never leaves a half-written file behind.
+ * shutdown hook calls {@link Senario#Cancel()} on every file being processed and
+ * waits for the workers to stop and delete their partial output, so an
+ * interrupted run never leaves a half-written file behind.
  *
  * @author Othmane
  */
@@ -74,67 +87,150 @@ public class cli {
             }
         }
 
-        // The cancel hook always targets whichever file is being processed right now.
-        final Senario[] current = new Senario[1];
-        Thread hook = installCancelHook(current);
+        // The cancel hook targets every file currently being processed.
+        final Set<Senario> active = ConcurrentHashMap.newKeySet();
+        Thread hook = installCancelHook(active);
 
-        int failures = 0;
-        for (File file : files) {
-            if (!file.isFile()) {
-                System.err.println("no such file: " + file);
-                failures++;
-                continue;
-            }
-            if (encrypt) {
-                EncryptingSenario enc = new EncryptingSenario(file, pw);
-                current[0] = enc;
-                enc.execute();
-                enc.get();
-                if (enc.isCanceled())   // Ctrl+C: the hook prints the message and cleans up
-                    return;
-                if (enc.NoEnoughFreeSpace()) {
-                    System.err.println("not enough free space for: " + file.getName());
-                    failures++;
-                    continue;
-                }
-                System.out.println("encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr"));
-            } else {
-                DecryptingSenario dec = new DecryptingSenario(file, pw, false);
-                current[0] = dec;
-                dec.execute();
-                dec.get();
-                if (dec.isCanceled())
-                    return;
-                if (dec.WrongPassword()) {
-                    System.err.println("wrong password or corrupted/tampered file: " + file.getName());
-                    failures++;
-                    continue;
-                }
-                System.out.println("decrypted " + file.getName());
-            }
+        Batch bar = new Batch(files.length);
+        String[] results = new String[files.length];   // filled per file, printed in order at the end
+
+        // One worker thread per CPU core, but never more than 3 files at once: each
+        // file drives 3 SwingWorker threads (worker + reader + writer) and that pool
+        // caps at 10, so a 4th concurrent file could starve a reader and deadlock.
+        int parallelism = Math.max(1, Math.min(files.length,
+                Math.min(Runtime.getRuntime().availableProcessors(), 3)));
+        ForkJoinPool pool = new ForkJoinPool(parallelism);
+        AtomicInteger failures = new AtomicInteger();
+        Future<?>[] tasks = new Future<?>[files.length];
+        for (int i = 0; i < files.length; i++) {
+            final int idx = i;
+            tasks[i] = pool.submit((java.util.concurrent.Callable<Void>) () -> {
+                if (!processFile(files[idx], encrypt, pw, active, bar, idx, results))
+                    failures.incrementAndGet();
+                return null;
+            });
         }
+        for (Future<?> t : tasks)
+            t.get();
+        pool.shutdown();
+
+        bar.render();
+        System.err.println();               // close the bar line before printing results
+        for (String line : results)
+            System.out.println(line);
 
         removeHook(hook);
-        if (failures > 0)
+        if (failures.get() > 0)
             System.exit(1);
     }
 
     /**
-     * Registers a Ctrl+C (SIGINT) handler that cancels the file currently being
-     * processed exactly as the GUI's Cancel button does, then blocks until the
-     * worker has stopped and removed its partial output before the JVM exits.
+     * Encrypts or decrypts one file, feeding its progress into the shared bar and
+     * recording a one-line result into {@code results[idx]}.
+     *
+     * @return {@code true} on success, {@code false} if the file was missing,
+     * had the wrong password, or ran out of free space
      */
-    private static Thread installCancelHook(final Senario[] current) {
-        Thread hook = new Thread(() -> {
-            Senario worker = current[0];
-            if (worker == null || worker.isDone())
-                return;                       // between files, or finished normally: nothing to cancel
-            worker.Cancel();
-            try {
-                worker.get();                 // wait for the worker to delete the partial output
-            } catch (Exception ignored) {
+    private static boolean processFile(File file, boolean encrypt, char[] pw, Set<Senario> active,
+                                       Batch bar, int idx, String[] results) throws Exception {
+        if (!file.isFile()) {
+            results[idx] = "no such file: " + file;
+            bar.set(idx, 100);   // count this slot as finished so the mean can still reach 100
+            return false;
+        }
+        Senario sen = encrypt ? new EncryptingSenario(file, pw) : new DecryptingSenario(file, pw, false);
+        sen.addPropertyChangeListener(e -> {
+            if ("progress".equals(e.getPropertyName()))
+                bar.set(idx, (int) e.getNewValue());
+        });
+        active.add(sen);
+        try {
+            sen.execute();
+            sen.get();
+            bar.set(idx, 100);   // the writer stops at 99; mark the slot done once the worker returns
+            if (sen.isCanceled())   // Ctrl+C: the hook prints the message and cleans up
+                return false;
+            if (encrypt) {
+                if (((EncryptingSenario) sen).NoEnoughFreeSpace()) {
+                    results[idx] = "not enough free space for: " + file.getName();
+                    return false;
+                }
+                results[idx] = "encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr");
+            } else {
+                if (((DecryptingSenario) sen).WrongPassword()) {
+                    results[idx] = "wrong password or corrupted/tampered file: " + file.getName();
+                    return false;
+                }
+                results[idx] = "decrypted " + file.getName();
             }
-            System.err.println("\ncancelled; partial output removed.");
+            return true;
+        } finally {
+            active.remove(sen);
+        }
+    }
+
+    /**
+     * A shared, thread-safe progress bar for the whole batch: it draws the mean
+     * of every file's 0..100 progress as one bar on stderr, so concurrent files
+     * show as a single advancing line rather than several tearing ones.
+     */
+    private static final class Batch {
+
+        private final int[] pct;
+
+        Batch(int files) {
+            this.pct = new int[files];
+        }
+
+        synchronized void set(int file, int value) {
+            // Monotonic: the worker thread marks a slot 100 while a late 99 event
+            // for it may still be queued on the EDT, so ignore any regression.
+            if (value <= this.pct[file])
+                return;
+            this.pct[file] = value;
+            this.render();
+        }
+
+        synchronized void render() {
+            long sum = 0;
+            for (int p : this.pct)
+                sum += p;
+            int overall = (int) (sum / this.pct.length);
+            int done = 0;
+            for (int p : this.pct)
+                if (p >= 100)
+                    done++;
+            final int width = 30;
+            int filled = overall * width / 100;
+            StringBuilder b = new StringBuilder("\r[");
+            for (int k = 0; k < width; k++)
+                b.append(k < filled ? '#' : '-');
+            b.append("] ").append(overall).append("%  (").append(done).append('/').append(this.pct.length).append(")   ");
+            System.err.print(b);
+            System.err.flush();
+        }
+    }
+
+    /**
+     * Registers a Ctrl+C (SIGINT) handler that cancels every file currently being
+     * processed exactly as the GUI's Cancel button does, then blocks until the
+     * workers have stopped and removed their partial output before the JVM exits.
+     */
+    private static Thread installCancelHook(final Set<Senario> active) {
+        Thread hook = new Thread(() -> {
+            boolean cancelledAny = false;
+            for (Senario worker : active) {
+                if (worker.isDone())
+                    continue;             // finished normally: nothing to cancel
+                worker.Cancel();
+                cancelledAny = true;
+                try {
+                    worker.get();         // wait for the worker to delete the partial output
+                } catch (Exception ignored) {
+                }
+            }
+            if (cancelledAny)
+                System.err.println("\ncancelled; partial output removed.");
         });
         Runtime.getRuntime().addShutdownHook(hook);
         return hook;
