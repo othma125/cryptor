@@ -2,6 +2,8 @@
 
 Cryptor is a Java Swing desktop application that encrypts any file into a password-protected `.cr` file, and decrypts it back to the original. It was first shared [on LinkedIn](https://www.linkedin.com/feed/update/urn:li:activity:6471397156392697856/).
 
+![Cryptor screenshot](thumbnail.png)
+
 **Runs on:** Windows, Linux and macOS — output paths use the platform file separator. The bundled `dist/Cryptor.exe` is Windows-only; elsewhere (and for scripting) run the jar or the [command-line mode](#running).
 
 > ⚠️ **Cryptor uses a custom, unaudited cipher. It is an educational project, not a replacement for AES.** Don't use it to protect anything you'd mind losing. Several real weaknesses have since been fixed — see [Design analysis](#design-analysis) — but that does not make it trustworthy, and [Why the warning still stands](#why-the-warning-still-stands) explains why not.
