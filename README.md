@@ -19,7 +19,7 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Background processing** — encryption/decryption runs on worker threads with a progress bar and cancel support. *Advantage:* the UI stays responsive and a long run on a big file can be stopped.
 - **Streamed I/O** — the file moves through 1024-byte blocks and bounded queues, never fully into memory. *Advantage:* file size is limited by disk, not RAM.
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
-- **Command-line mode** — `cli encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files). *Advantage:* scriptable and easy to fuzz/benchmark; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
+- **Command-line mode** — `cli encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
 - **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
 ## How it works
@@ -130,9 +130,11 @@ java -cp out cli decrypt path/to/file.cr [more .cr ...]  # prompts for the passw
 
 Several files can be given in one call (handy for a drag-and-drop selection): the password is asked once and applied to the whole batch, and a file that fails — missing, wrong password, no free space — is reported and skipped while the rest continue, with a non-zero exit if any failed.
 
+A batch is processed in parallel on a `ForkJoinPool` sized to the number of CPU cores — but never more than three files at once, because each file drives three worker threads (crypto + reader + writer) out of a shared pool of ten, and a fourth concurrent file could starve a reader and deadlock. A single progress bar on stderr shows the mean progress across the batch (the same 0–100 the GUI shows for one file), and the per-file results are printed together once it fills, so they never tear the bar mid-draw.
+
 The password is always read interactively, never taken as an argument — a command-line password leaks into shell history and the process list. It is read without echo from the console (or from stdin when piped). Encryption prompts twice and requires a match, refuses an empty password, and a wrong password or tampered file exits non-zero with an error.
 
-Pressing **Ctrl+C** during a run is the same operation as the GUI's Cancel button: a shutdown hook calls the worker's `Cancel()` and waits for it to remove the partial output, so an interrupted run never leaves a half-written `.cr` (or a half-written decrypted file) behind. Ctrl+C *at the password prompt* — before any file is touched — just prints `cancelled` and exits, with no stack trace.
+Pressing **Ctrl+C** during a run is the same operation as the GUI's Cancel button: a shutdown hook calls `Cancel()` on every file still in flight and waits for each to remove its partial output, so an interrupted run never leaves a half-written `.cr` (or a half-written decrypted file) behind. Ctrl+C *at the password prompt* — before any file is touched — just prints `cancelled` and exits, with no stack trace.
 
 ## Building
 
