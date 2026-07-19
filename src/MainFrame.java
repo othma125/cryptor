@@ -12,6 +12,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import javax.swing.JFileChooser;
+import javax.swing.JOptionPane;
 import javax.swing.filechooser.FileFilter;
 
 /**
@@ -110,6 +111,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         EncryptingPassword2 = new javax.swing.JPasswordField();
         EncryptingBrowserButton = new javax.swing.JButton();
         EncryptingButton = new javax.swing.JButton();
+        jCheckBox_DeleteOriginal = new javax.swing.JCheckBox();
         DecryptingPanel = new javax.swing.JPanel();
         jLabel2 = new javax.swing.JLabel();
         DecryptingPassword = new javax.swing.JPasswordField();
@@ -377,6 +379,8 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             }
         });
 
+        jCheckBox_DeleteOriginal.setText("Delete original file after encryption");
+
         javax.swing.GroupLayout EncryptingPanelLayout = new javax.swing.GroupLayout(EncryptingPanel);
         EncryptingPanel.setLayout(EncryptingPanelLayout);
         EncryptingPanelLayout.setHorizontalGroup(
@@ -386,6 +390,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                 .addGroup(EncryptingPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addComponent(EncryptingPassword1, javax.swing.GroupLayout.PREFERRED_SIZE, 115, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(jLabel1)
+                    .addComponent(jCheckBox_DeleteOriginal)
                     .addComponent(EncryptingPassword2, javax.swing.GroupLayout.PREFERRED_SIZE, 115, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 145, Short.MAX_VALUE)
                 .addGroup(EncryptingPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -403,7 +408,9 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                         .addComponent(EncryptingPassword1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(EncryptingPassword2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                        .addComponent(EncryptingPassword2, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jCheckBox_DeleteOriginal))
                     .addGroup(EncryptingPanelLayout.createSequentialGroup()
                         .addGap(50, 50, 50)
                         .addComponent(EncryptingBrowserButton)
@@ -631,6 +638,14 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             this.ShowPasswordDialog("The entered passwords do not match");
             return;
         }
+        // Destructive option: confirm before the run, since it deletes the source.
+        if (this.jCheckBox_DeleteOriginal.isSelected()
+                && JOptionPane.showConfirmDialog(this,
+                        "The original file will be permanently deleted (securely overwritten)\nafter encryption. This cannot be undone. Continue?",
+                        this.Name, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
+            this.jTabbedPane.setEnabled(true);
+            return;
+        }
         this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         this.EncSen = new EncryptingSenario(this.SelectedFile, password1);
         this.EncSen.addPropertyChangeListener(this);
@@ -775,6 +790,16 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                         this.EncSen = null;
                     }
                     else {
+                        if (this.jCheckBox_DeleteOriginal.isSelected()) {
+                            try {
+                                Tools.SecureDelete.wipe(this.SelectedFile);
+                            } catch (IOException wipeFailed) {
+                                JOptionPane.showMessageDialog(this,
+                                        "Encrypted, but the original could not be deleted:\n" + wipeFailed.getMessage(),
+                                        this.Name, JOptionPane.WARNING_MESSAGE);
+                            }
+                            this.jCheckBox_DeleteOriginal.setSelected(false);
+                        }
                         this.setEnabled(false);
                         this.jDialog_Done.setVisible(true);
                     }
@@ -838,6 +863,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     private javax.swing.JButton jButton_PasswordsDoNotMatch;
     private javax.swing.JButton jButton_WrongPassword;
     private javax.swing.JButton jButton__ChosenFileEmty;
+    private javax.swing.JCheckBox jCheckBox_DeleteOriginal;
     private javax.swing.JCheckBox jCheckBox_OpenFile;
     private javax.swing.JDialog jDialog_ChosenFileEmty;
     private javax.swing.JDialog jDialog_Done;

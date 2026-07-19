@@ -19,6 +19,7 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Background processing** — encryption/decryption runs on worker threads with a progress bar and cancel support. *Advantage:* the UI stays responsive and a long run on a big file can be stopped.
 - **Streamed I/O** — the file moves through 1024-byte blocks and bounded queues, never fully into memory. *Advantage:* file size is limited by disk, not RAM.
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
+- **Optional deep-delete of the original** — encryption can wipe the source once the `.cr` is safely written (GUI checkbox, or `-d` on the CLI): the plaintext is overwritten with random bytes and flushed to disk before the file is unlinked. *Advantage:* the cleartext isn't left behind for an undelete tool. *Caveat:* on an SSD or copy-on-write filesystem, wear-levelling means the overwrite may not reach the original blocks — this defeats casual recovery, not forensic recovery on flash.
 - **Command-line mode** — `cli encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
 - **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
@@ -98,7 +99,7 @@ This part is solid:
 | `src/Encryption/BlockIO.java` | Abstract base for both I/O workers; holds the bounded block queue, the EOF sentinel and the cancellation plumbing they share |
 | `src/Encryption/FileReader.java` / `src/Encryption/FileWriter.java` | Threaded block I/O with progress and cancellation; extend `BlockIO` |
 | `src/Encryption/Order.java` | Password-derived permutations, PBKDF2 key derivation, per-block sub-keys and the MAC key |
-| `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps) |
+| `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps), `SecureDelete` (best-effort deep-delete of the original after encryption) |
 | `InputParameters` | Required data file, loaded at startup from the working directory |
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
 | `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
@@ -124,13 +125,15 @@ For scripting or headless use, `cli` encrypts/decrypts without the GUI:
 
 ```
 javac -d out src/*.java src/Encryption/*.java src/Tools/*.java
-java -cp out cli encrypt [-r] path/to/file-or-dir [more ...]   # prompts for the password
-java -cp out cli decrypt [-r] path/to/file-or-dir [more ...]   # prompts for the password
+java -cp out cli encrypt [-r] [-d [-y]] path/to/file-or-dir [more ...]   # prompts for the password
+java -cp out cli decrypt [-r] path/to/file-or-dir [more ...]             # prompts for the password
 ```
 
 Several files can be given in one call (handy for a drag-and-drop selection): the password is asked once and applied to the whole batch, and a file that fails — missing, wrong password, no free space — is reported and skipped while the rest continue, with a non-zero exit if any failed.
 
 A **directory** argument expands to the files inside it — directly inside by default, or in every subfolder with **`-r`** (`--recursive`), placed right after the command. `encrypt` takes every file except existing `.cr` ones — re-encrypting `foo.cr` would strip and re-add `.cr` and overwrite it — and `decrypt` takes only `.cr` files, skipping the rest. So `cli encrypt mydir` encrypts a whole folder, `cli decrypt -r mydir` decrypts every `.cr` under a tree, in one call. An explicit file argument is always processed as given, whatever its name.
+
+**`-d`** (`--delete`) makes encryption **delete each original after it is encrypted**, once the `.cr` is safely written — a deep delete, not just an unlink: the source is overwritten with random bytes and flushed to disk first, so it can't be recovered with an undelete tool (see the caveat under [Features](#features) — this is best-effort on SSDs). Because it destroys data, `-d` prints a one-line warning for the whole batch and waits for a `y` before touching anything; **`-y`** (`--yes`) skips that prompt for non-interactive/scripted use. `-d` is encrypt-only — passing it to `decrypt` is an error, since decryption never owns the `.cr`'s original. In the GUI the same option is the **"Delete original file after encryption"** checkbox on the Encrypt tab, which pops a confirmation before the run.
 
 A batch is processed in parallel on a `ForkJoinPool` sized to the number of CPU cores — but never more than three files at once, because each file drives three worker threads (crypto + reader + writer) out of a shared pool of ten, and a fourth concurrent file could starve a reader and deadlock. A single progress bar on stderr shows the mean progress across the batch (the same 0–100 the GUI shows for one file), and the per-file results are printed together once it fills, so they never tear the bar mid-draw.
 

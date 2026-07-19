@@ -56,15 +56,33 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class cli {
 
     public static void main(String[] args) throws Exception {
-        String usage = "usage: java -cp out cli encrypt|decrypt [-r] <file|dir> [<file|dir> ...]";
+        String usage = "usage: java -cp out cli encrypt|decrypt [-r] [-d [-y]] <file|dir> [<file|dir> ...]";
         if (args.length < 2 || (!args[0].equals("encrypt") && !args[0].equals("decrypt"))) {
             System.err.println(usage);
             System.exit(2);
         }
         boolean encrypt = args[0].equals("encrypt");
-        // Optional -r/--recursive walks directory arguments into their subfolders.
-        boolean recursive = args[1].equals("-r") || args[1].equals("--recursive");
-        int start = recursive ? 2 : 1;
+        // Leading flags in any order: -r/--recursive walks directories into their
+        // subfolders; -d/--delete wipes each original after it encrypts (encrypt
+        // only); -y/--yes skips the deletion warning.
+        boolean recursive = false, deleteOriginal = false, assumeYes = false;
+        int start = 1;
+        while (start < args.length && args[start].startsWith("-")) {
+            switch (args[start]) {
+                case "-r": case "--recursive": recursive = true; break;
+                case "-d": case "--delete": deleteOriginal = true; break;
+                case "-y": case "--yes": assumeYes = true; break;
+                default:
+                    System.err.println("unknown option: " + args[start]);
+                    System.err.println(usage);
+                    System.exit(2);
+            }
+            start++;
+        }
+        if (deleteOriginal && !encrypt) {
+            System.err.println("-d only applies to encrypt (decrypt never touches the .cr's original).");
+            System.exit(2);
+        }
         if (start >= args.length) {
             System.err.println(usage);
             System.exit(2);
@@ -105,6 +123,18 @@ public class cli {
             System.exit(1);
         }
 
+        // Destructive: warn once for the whole batch before anything is touched,
+        // unless -y was given. A no at the prompt aborts before the password.
+        if (deleteOriginal && !assumeYes) {
+            System.err.println("WARNING: -d will permanently delete " + files.length
+                    + " original file(s) after encrypting them (securely overwritten, not"
+                    + " recoverable by undelete tools). This cannot be undone.");
+            if (!confirm("Proceed? [y/N] ")) {
+                System.err.println("aborted.");
+                System.exit(1);
+            }
+        }
+
         // One password for the whole batch, read before any file is touched.
         char[] pw = readPassword("Enter password: ");
         if (encrypt) {
@@ -134,10 +164,11 @@ public class cli {
         ForkJoinPool pool = new ForkJoinPool(parallelism);
         AtomicInteger failures = new AtomicInteger();
         Future<?>[] tasks = new Future<?>[files.length];
+        final boolean wipe = deleteOriginal;
         for (int i = 0; i < files.length; i++) {
             final int idx = i;
             tasks[i] = pool.submit((java.util.concurrent.Callable<Void>) () -> {
-                if (!processFile(files[idx], encrypt, pw, active, bar, idx, results))
+                if (!processFile(files[idx], encrypt, wipe, pw, active, bar, idx, results))
                     failures.incrementAndGet();
                 return null;
             });
@@ -163,8 +194,8 @@ public class cli {
      * @return {@code true} on success, {@code false} if the file was missing,
      * had the wrong password, or ran out of free space
      */
-    private static boolean processFile(File file, boolean encrypt, char[] pw, Set<Senario> active,
-                                       Batch bar, int idx, String[] results) throws Exception {
+    private static boolean processFile(File file, boolean encrypt, boolean deleteOriginal, char[] pw,
+                                       Set<Senario> active, Batch bar, int idx, String[] results) throws Exception {
         if (!file.isFile()) {
             results[idx] = "no such file: " + file;
             bar.set(idx, 100);   // count this slot as finished so the mean can still reach 100
@@ -188,6 +219,14 @@ public class cli {
                     return false;
                 }
                 results[idx] = "encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr");
+                if (deleteOriginal) {   // wipe the plaintext only once the .cr is safely written
+                    try {
+                        Tools.SecureDelete.wipe(file);
+                        results[idx] += "  (original deleted)";
+                    } catch (java.io.IOException e) {
+                        results[idx] += "  (could not delete original: " + e.getMessage() + ")";
+                    }
+                }
             } else {
                 if (((DecryptingSenario) sen).WrongPassword()) {
                     results[idx] = "wrong password or corrupted/tampered file: " + file.getName();
@@ -300,6 +339,29 @@ public class cli {
             System.exit(130);
         }
         return pw;
+    }
+
+    /**
+     * Reads a yes/no answer from the console (or stdin when piped) for the
+     * destructive {@code -d} prompt. Only an explicit {@code y}/{@code yes}
+     * (any case) is a yes; EOF or anything else is a no.
+     */
+    private static boolean confirm(String prompt) {
+        try {
+            String line;
+            if (System.console() != null) {
+                line = System.console().readLine(prompt);
+            } else {
+                System.err.print(prompt);
+                line = new BufferedReader(new InputStreamReader(System.in)).readLine();
+            }
+            if (line == null)
+                return false;
+            line = line.trim().toLowerCase();
+            return line.equals("y") || line.equals("yes");
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** Base name without its final extension, matching the .cr naming the worker uses. */
