@@ -23,6 +23,7 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
 - **Optional deep-delete of the original** — encryption can wipe the source once the `.cr` is safely written (GUI checkbox, or `-d` on the CLI): the plaintext is overwritten with random bytes and flushed to disk before the file is unlinked. *Advantage:* the cleartext isn't left behind for an undelete tool. *Caveat:* on an SSD or copy-on-write filesystem, wear-levelling means the overwrite may not reach the original blocks — this defeats casual recovery, not forensic recovery on flash.
 - **Command-line mode** — `Cli.Main encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
+- **Drag and drop** — files or folders can be dropped straight onto the window; the active tab filters them (Decrypt takes only `.cr`, Encrypt takes everything else) and a dropped folder is walked recursively. *Advantage:* a whole folder is queued in one gesture, and the filtering makes it impossible to hand a file to the wrong direction by accident.
 - **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
 ## How it works
@@ -107,7 +108,7 @@ This part is solid:
 | `src/Encryption/BlockIO.java` | Abstract base for both I/O workers; holds the bounded block queue, the EOF sentinel and the cancellation plumbing they share |
 | `src/Encryption/FileReader.java` / `src/Encryption/FileWriter.java` | Threaded block I/O with progress and cancellation; extend `BlockIO` |
 | `src/Encryption/Order.java` | Password-derived permutations, PBKDF2 key derivation, per-block sub-keys and the MAC key |
-| `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps), `SecureDelete` (best-effort deep-delete of the original after encryption) |
+| `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps), `SecureDelete` (best-effort deep-delete of the original after encryption), `FileScan` (expands dropped/argument paths into the files to work on, shared by the GUI and CLI) |
 | `InputParameters` | Required data file, loaded at startup from the working directory |
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
 | `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
@@ -126,6 +127,8 @@ java -jar dist/Cryptor.jar
 On Windows you can instead run the generated `dist/Cryptor.exe`.
 
 > **Note:** the `InputParameters` file must be present in the working directory, otherwise the app blocks encryption/decryption.
+
+**Drag and drop** files or folders onto the window as an alternative to Browse. The active tab decides what is kept: the Decrypt tab takes only `.cr` files and the Encrypt tab takes everything except `.cr`, so a drop can't feed a file to the wrong side. A dropped **folder** is expanded through its subfolders — the CLI's `-r`. If nothing in the drop suits the tab, the selection is left alone and a dialog says so. Drops are ignored while a run is in progress. The title bar shows what is queued.
 
 The **Browse** button takes multiple files (ctrl/shift-click). They run one after another under the single password you entered, the title bar shows `Cryptor (3/7)` as it goes, and the Done dialog appears once at the end. Cancel, a wrong password, or a full disk stops the queue where it is. Empty files and directories are dropped from the selection — for whole directories, use the CLI's `-r`.
 

@@ -5,12 +5,16 @@ import Tools.InputParameters;
 import java.awt.Cursor;
 import java.awt.Image;
 import java.awt.Toolkit;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.UnsupportedFlavorException;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
+import javax.swing.TransferHandler;
 import javax.swing.filechooser.FileFilter;
 
 /**
@@ -53,6 +57,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.setTitle(this.Name);
         this.setLocationRelativeTo(null);
         this.setIconImage(this.Logo);
+        this.setTransferHandler(new FileDropHandler());   // files/folders can be dropped anywhere on the window
         this.EncryptingButton.setEnabled(false);
         this.DecryptingButton.setEnabled(false);
         this.EncryptingPassword1.setText("");
@@ -632,13 +637,11 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            this.Queue = MainFrame.NonEmpty(this.FC.getSelectedFiles());
-            if (this.Queue.length == 0) {
+            File[] picked = MainFrame.NonEmpty(this.FC.getSelectedFiles());
+            if (picked.length == 0)
                 this.jDialog_ChosenFileEmty.setVisible(true);
-            } else {
-                this.DecryptingButton.setEnabled(true);
-                this.EncryptingButton.setEnabled(false);
-            }
+            else
+                this.Accept(picked, false);
         }
     }//GEN-LAST:event_DecryptingBrowserButtonActionPerformed
     private void EncryptingButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_EncryptingButtonActionPerformed
@@ -695,15 +698,81 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            this.Queue = MainFrame.NonEmpty(this.FC.getSelectedFiles());
-            if (this.Queue.length == 0) {
+            File[] picked = MainFrame.NonEmpty(this.FC.getSelectedFiles());
+            if (picked.length == 0)
                 this.jDialog_ChosenFileEmty.setVisible(true);
-            } else {
-                this.EncryptingButton.setEnabled(true);
-                this.DecryptingButton.setEnabled(false);
-            }
+            else
+                this.Accept(picked, true);
         }
     }//GEN-LAST:event_EncryptingBrowserButtonActionPerformed
+
+    /**
+     * Accepts a drag-and-drop of files and folders onto the window, filling the
+     * same queue the Browse button fills. The active tab decides the direction:
+     * the Decrypt tab keeps only {@code .cr} files and the Encrypt tab keeps
+     * everything else, so a drop can't feed a file to the wrong side. A dropped
+     * folder is expanded through its subfolders, the CLI's {@code -r}.
+     */
+    private final class FileDropHandler extends TransferHandler {
+
+        @Override
+        public boolean canImport(TransferSupport support) {
+            return support.isDrop()
+                    && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+                    && MainFrame.this.EncSen == null && MainFrame.this.DecSen == null;   // not mid-run
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public boolean importData(TransferSupport support) {
+            if (!this.canImport(support))
+                return false;
+            boolean encrypting = MainFrame.this.jTabbedPane.getSelectedIndex() == 0;
+            List<File> picked;
+            try {
+                List<File> dropped = (List<File>) support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                picked = Tools.FileScan.expand(dropped, true, encrypting);
+            } catch (UnsupportedFlavorException | IOException dropFailed) {
+                return false;
+            }
+            // expand() takes a dropped *file* as given, whatever its name; here the
+            // tab's direction is the whole point of the drop, so filter those too.
+            picked.removeIf(f -> !Tools.FileScan.matchesMode(f, encrypting));
+            File[] usable = MainFrame.NonEmpty(picked.toArray(new File[0]));
+            if (usable.length == 0) {
+                JOptionPane.showMessageDialog(MainFrame.this,
+                        encrypting ? "Nothing to encrypt in what you dropped.\n(.cr files belong on the Decrypt tab.)"
+                                   : "No .cr file in what you dropped.\n(Decryption only takes .cr files.)",
+                        MainFrame.this.Name, JOptionPane.INFORMATION_MESSAGE);
+                return false;
+            }
+            MainFrame.this.Accept(usable, encrypting);
+            return true;
+        }
+    }
+
+    /**
+     * Takes {@code files} as the new queue for the given direction, exactly as a
+     * Browse selection would: clears the passwords, enables that tab's button,
+     * and shows the count in the title bar so a drop is visibly acknowledged.
+     */
+    private void Accept(File[] files, boolean encrypting) {
+        this.Queue = files;
+        this.QueueIndex = 0;
+        if (encrypting) {
+            this.EncryptingPassword1.setText("");
+            this.EncryptingPassword2.setText("");
+            this.EncryptingButton.setEnabled(true);
+            this.DecryptingButton.setEnabled(false);
+        }
+        else {
+            this.DecryptingPassword.setText("");
+            this.DecryptingButton.setEnabled(true);
+            this.EncryptingButton.setEnabled(false);
+        }
+        this.setTitle(files.length == 1 ? this.Name + " - " + files[0].getName()
+                                        : this.Name + " - " + files.length + " files");
+    }
 
     /**
      * Keeps only the picks worth running: an empty file has nothing to

@@ -1,14 +1,11 @@
 // Author: Othmane
 package Cli;
 
+import Tools.FileScan;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.stream.Stream;
 
 /**
  * One parsed command line: the mode, the flags, and the paths. Immutable once
@@ -113,32 +110,9 @@ public final class Options {
      * @throws java.io.IOException
      */
     public File[] resolveFiles() throws IOException {
-        List<File> found = new ArrayList<>();
-        for (String path : this.paths) {
-            File f = new File(path).getAbsoluteFile();   // absolute so getParent() is never null on a bare name
-            if (!f.isDirectory()) {
-                found.add(f);
-                continue;
-            }
-            if (this.recursive) {
-                try (Stream<Path> walk = Files.walk(f.toPath())) {
-                    walk.filter(Files::isRegularFile)
-                            .map(Path::toFile)
-                            .filter(this::wanted)
-                            .forEach(found::add);
-                }
-            }
-            else {
-                File[] inside = f.listFiles(c -> c.isFile() && this.wanted(c));
-                if (inside != null)
-                    Collections.addAll(found, inside);
-            }
-        }
-        return found.toArray(new File[0]);
-    }
-
-    /** A file picked up from a directory is wanted if its name suits the mode. */
-    private boolean wanted(File f) {
-        return f.getName().endsWith(".cr") != this.encrypting();
+        List<File> roots = new ArrayList<>();
+        for (String path : this.paths)
+            roots.add(new File(path).getAbsoluteFile());   // absolute so getParent() is never null on a bare name
+        return FileScan.expand(roots, this.recursive, this.encrypting()).toArray(new File[0]);
     }
 }
