@@ -14,7 +14,7 @@ import javax.crypto.Mac;
  * Runs the encryption of one file on a background thread. Derives two password
  * orders (16- and 256-element), writes a header with the original file name,
  * then streams the file through the bit-level substitution, emitting the result
- * via a {@link FileWriter} to a {@code <name>.cr} file next to the source.
+ * via a {@link FileWriter} to a {@code <basename>.cr} file next to the source.
  * Reports progress and supports cancel.
  *
  * @author Othmane
@@ -64,6 +64,36 @@ public class EncryptingSenario extends Senario {
         this.secondLayer = new Order(InputParameters._256, Order.subKey(this.masterPW, block)).getOrder();
     }
 
+    /**
+     * Names the output {@code <basename>.cr}, dropping the original extension:
+     * the extension leaks what the file is, and it is already stored inside the
+     * encrypted header, so decryption restores it in full.
+     *
+     * <p>
+     * Dropping it makes distinct sources collide ({@code a.bin} and {@code a.txt}
+     * both want {@code a.cr}), so an occupied name gets a {@code (n)} suffix
+     * rather than silently overwriting the earlier file. The suffix is on the
+     * {@code .cr} only; the recovered name comes from the header regardless.
+     */
+    static File crName(File input) {
+        String name = input.getName();
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;   // dot > 0 keeps dotfiles (".bashrc") whole
+        File parent = input.getParentFile();
+        File candidate = new File(parent, base + ".cr");
+        for (int n = 1; candidate.exists(); n++)
+            candidate = new File(parent, base + " (" + n + ").cr");
+        return candidate;
+    }
+
+    /** The {@code .cr} actually written, once {@link #crName} has resolved collisions. */
+    private File outputFile;
+
+    /** @return the {@code .cr} file this run wrote, or {@code null} before it starts. */
+    public File OutputFile() {
+        return this.outputFile;
+    }
+
     private static byte[] randomSalt() {
         byte[] s = new byte[InputParameters.saltLength];
         new SecureRandom().nextBytes(s);
@@ -73,11 +103,7 @@ public class EncryptingSenario extends Senario {
     @Override
     protected Void doInBackground() throws FileNotFoundException, IOException, InterruptedException {
         String InputFileName = this.inputFile.getName();
-        // Full name plus .cr, not basename plus .cr: stripping the extension made
-        // a.bin and a.copy in one directory both encrypt to a.cr, the second
-        // silently overwriting the first.
-        File OutputFile = new File(this.inputFile.getParentFile(), InputFileName + ".cr");
-        OutputFile.delete();
+        File OutputFile = this.outputFile = crName(this.inputFile);   // already free: crName steps past anything existing
         this.FW = new FileWriter(this.inputFile, OutputFile, false);
         if (this.NoEnoughFreeSpace()) {
             this.setProgress(100);

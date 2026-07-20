@@ -88,7 +88,7 @@ final class FileTask implements Callable<Void> {
             this.result = "not enough free space for: " + this.file.getName();
             return false;
         }
-        this.result = "encrypted -> " + new File(this.file.getParent(), this.file.getName() + ".cr");
+        this.result = "encrypted -> " + sen.OutputFile();   // ask the run: the name may carry a (n) collision suffix
         if (this.options.deleteOriginal)   // wipe the plaintext only once the .cr is safely written
             try {
                 Tools.SecureDelete.wipe(this.file);

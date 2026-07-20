@@ -406,7 +406,7 @@ public class CryptanalysisTest {
         EncryptingSenario enc = new EncryptingSenario(plain, PW, salt);
         enc.execute();
         enc.get();
-        byte[] cr = Files.readAllBytes(new File(dir, "kpa.dat.cr").toPath());
+        byte[] cr = Files.readAllBytes(new File(dir, "kpa.cr").toPath());
         deleteRecursively(dir);
         int[] body = new int[cr.length - InputParameters.saltLength - InputParameters.tagLength];
         for (int i = 0; i < body.length; i++)
@@ -673,7 +673,7 @@ public class CryptanalysisTest {
         EncryptingSenario enc = factory.make(plain);
         enc.execute();
         enc.get();
-        byte[] cipher = Files.readAllBytes(new File(dir, "plain.dat.cr").toPath());
+        byte[] cipher = Files.readAllBytes(new File(dir, "plain.cr").toPath());
         deleteRecursively(dir);
         return cipher;
     }
