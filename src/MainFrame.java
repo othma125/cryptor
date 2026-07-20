@@ -8,9 +8,7 @@ import java.awt.Toolkit;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.filechooser.FileFilter;
@@ -34,6 +32,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     final String DesktopPath = System.getProperty("user.home") + File.separator + "Desktop";
     JFileChooser FC;
     File SelectedFile;
+    // The chooser is multi-selection: Queue holds every picked file and
+    // QueueIndex the one currently running. A single pick is just a queue of 1.
+    File[] Queue = new File[0];
+    int QueueIndex = 0;
     EncryptingSenario EncSen = null;
     DecryptingSenario DecSen = null;
     Image Logo = Toolkit.getDefaultToolkit().getImage("Icon.gif");
@@ -581,13 +583,32 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             return;
         }
         this.jTabbedPane.setEnabled(false);
-        this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         // An empty password needs no special case: encryption never accepts one,
         // so it always fails the MAC and lands in the wrong-password dialog.
-        this.DecSen = new DecryptingSenario(this.SelectedFile, this.DecryptingPassword.getPassword(), this.jCheckBox_OpenFile.isSelected());
-        this.DecSen.addPropertyChangeListener(this);
-        this.DecSen.execute();
+        this.QueueIndex = 0;
+        this.StartNext();
     }//GEN-LAST:event_DecryptingButtonActionPerformed
+
+    /**
+     * Runs {@code Queue[QueueIndex]} on the current tab's scenario. Called once
+     * per file: {@link #propertyChange} advances the index and calls back here
+     * until the queue is exhausted, so a multi-file pick runs one at a time.
+     */
+    private void StartNext() {
+        this.SelectedFile = this.Queue[this.QueueIndex];
+        if (this.Queue.length > 1)
+            this.setTitle(this.Name + " (" + (this.QueueIndex + 1) + "/" + this.Queue.length + ")");
+        this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        if (this.jTabbedPane.getSelectedIndex() == 0) {
+            this.EncSen = new EncryptingSenario(this.SelectedFile, this.EncryptingPassword1.getPassword());
+            this.EncSen.addPropertyChangeListener(this);
+            this.EncSen.execute();
+        } else {
+            this.DecSen = new DecryptingSenario(this.SelectedFile, this.DecryptingPassword.getPassword(), this.jCheckBox_OpenFile.isSelected());
+            this.DecSen.addPropertyChangeListener(this);
+            this.DecSen.execute();
+        }
+    }
     private void DecryptingBrowserButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_DecryptingBrowserButtonActionPerformed
         // TODO add your handling code here:
         if (this.DecSen != null) 
@@ -608,19 +629,16 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                 return "File .cr";
             }
         });
+        this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            this.SelectedFile = this.FC.getSelectedFile();
-            try (RandomAccessFile RAF = new RandomAccessFile(this.SelectedFile, "r")) {
-                if (RAF.length() > 0) {
-                    this.DecryptingButton.setEnabled(true);
-                    this.EncryptingButton.setEnabled(false);
-                } else {
-                    this.jDialog_ChosenFileEmty.setVisible(true);
-                }
-                RAF.close();
-            } catch (FileNotFoundException ex) {
-            } catch (IOException ex) {}
+            this.Queue = MainFrame.NonEmpty(this.FC.getSelectedFiles());
+            if (this.Queue.length == 0) {
+                this.jDialog_ChosenFileEmty.setVisible(true);
+            } else {
+                this.DecryptingButton.setEnabled(true);
+                this.EncryptingButton.setEnabled(false);
+            }
         }
     }//GEN-LAST:event_DecryptingBrowserButtonActionPerformed
     private void EncryptingButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_EncryptingButtonActionPerformed
@@ -638,18 +656,16 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             this.ShowPasswordDialog("The entered passwords do not match");
             return;
         }
-        // Destructive option: confirm before the run, since it deletes the source.
+        // Destructive option: confirm once for the whole queue, since it deletes the sources.
         if (this.jCheckBox_DeleteOriginal.isSelected()
                 && JOptionPane.showConfirmDialog(this,
-                        "The original file will be permanently deleted (securely overwritten)\nafter encryption. This cannot be undone. Continue?",
+                        "The " + this.Queue.length + " original file(s) will be permanently deleted (securely\noverwritten) after encryption. This cannot be undone. Continue?",
                         this.Name, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) {
             this.jTabbedPane.setEnabled(true);
             return;
         }
-        this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        this.EncSen = new EncryptingSenario(this.SelectedFile, password1);
-        this.EncSen.addPropertyChangeListener(this);
-        this.EncSen.execute();
+        this.QueueIndex = 0;
+        this.StartNext();
     }//GEN-LAST:event_EncryptingButtonActionPerformed
     /**
      * Shows the password-rejected dialog with {@code message}, for the two ways
@@ -672,25 +688,34 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.EncryptingButton.setEnabled(false);
         this.EncryptingPassword1.setText("");
         this.EncryptingPassword2.setText("");
-        if (this.FC == null) 
+        if (this.FC == null)
             this.FC = new JFileChooser();
-        else 
-            this.FC.removeChoosableFileFilter(this.FC.getAcceptAllFileFilter());
+        else
+            this.FC.resetChoosableFileFilters();   // drop the decrypt tab's .cr filter
+        this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            this.SelectedFile = this.FC.getSelectedFile();
-            try (RandomAccessFile RAF = new RandomAccessFile(this.SelectedFile, "r")) {
-                if (RAF.length() > 0) {
-                    this.EncryptingButton.setEnabled(true);
-                    this.DecryptingButton.setEnabled(false);
-                } else {
-                    this.jDialog_ChosenFileEmty.setVisible(true);
-                }
-                RAF.close();
-            } catch (FileNotFoundException ex) {
-            } catch (IOException ex) {}
+            this.Queue = MainFrame.NonEmpty(this.FC.getSelectedFiles());
+            if (this.Queue.length == 0) {
+                this.jDialog_ChosenFileEmty.setVisible(true);
+            } else {
+                this.EncryptingButton.setEnabled(true);
+                this.DecryptingButton.setEnabled(false);
+            }
         }
     }//GEN-LAST:event_EncryptingBrowserButtonActionPerformed
+
+    /**
+     * Keeps only the picks worth running: an empty file has nothing to
+     * encrypt, and a directory isn't handled by the GUI (the CLI does those).
+     */
+    private static File[] NonEmpty(File[] files) {
+        java.util.List<File> keep = new java.util.ArrayList<>();
+        for (File f : files)
+            if (f.isFile() && f.length() > 0)
+                keep.add(f);
+        return keep.toArray(new File[0]);
+    }
     private void jButton_InputParameterFileNotFoundActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_InputParameterFileNotFoundActionPerformed
         // TODO add your handling code here:
         System.exit(0);
@@ -778,6 +803,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                 this.setCursor(null);
                 this.jButton_Cancel.setEnabled(false);
                 this.jProgressBar.setValue(0);
+                this.setTitle(this.Name);   // StartNext re-stamps the counter if the queue continues
                 if (this.jTabbedPane.getSelectedIndex() == 0) {
                     if (this.EncSen.isCanceled()) {
                         this.jTabbedPane.setEnabled(true);
@@ -798,8 +824,13 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                                         "Encrypted, but the original could not be deleted:\n" + wipeFailed.getMessage(),
                                         this.Name, JOptionPane.WARNING_MESSAGE);
                             }
-                            this.jCheckBox_DeleteOriginal.setSelected(false);
                         }
+                        if (++this.QueueIndex < this.Queue.length) {   // more picked files: run the next one
+                            this.EncSen = null;
+                            this.StartNext();
+                            return;
+                        }
+                        this.jCheckBox_DeleteOriginal.setSelected(false);
                         this.setEnabled(false);
                         this.jDialog_Done.setVisible(true);
                     }
@@ -828,6 +859,11 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                         this.DecSen = null;
                     }
                     else {
+                        if (++this.QueueIndex < this.Queue.length) {   // more picked files: run the next one
+                            this.DecSen = null;
+                            this.StartNext();
+                            return;
+                        }
                         this.setEnabled(false);
                         if (this.jCheckBox_OpenFile.isSelected()) {
                             this.jCheckBox_OpenFile.setSelected(false);

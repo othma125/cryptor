@@ -106,7 +106,7 @@ This part is solid:
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
 | `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
 | `test/BenchmarkTest.java` | Encrypt/decrypt throughput benchmark across file sizes |
-| `dist/` | Build output produced by `ant jar` (`Cryptor.jar` / `Cryptor.exe`); git-ignored |
+| `dist/` | Build output produced by `ant jar` (`Cryptor.jar` / `Cryptor.exe`), tracked so the jar is runnable straight from a clone |
 
 ## Running
 
@@ -120,6 +120,8 @@ java -jar dist/Cryptor.jar
 On Windows you can instead run the generated `dist/Cryptor.exe`.
 
 > **Note:** the `InputParameters` file must be present in the working directory, otherwise the app blocks encryption/decryption.
+
+The **Browse** button takes multiple files (ctrl/shift-click). They run one after another under the single password you entered, the title bar shows `Cryptor (3/7)` as it goes, and the Done dialog appears once at the end. Cancel, a wrong password, or a full disk stops the queue where it is. Empty files and directories are dropped from the selection — for whole directories, use the CLI's `-r`.
 
 ### Command-line mode
 
