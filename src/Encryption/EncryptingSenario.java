@@ -7,7 +7,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.SecureRandom;
-import java.util.StringTokenizer;
 import java.util.stream.IntStream;
 import javax.crypto.Mac;
 
@@ -74,7 +73,10 @@ public class EncryptingSenario extends Senario {
     @Override
     protected Void doInBackground() throws FileNotFoundException, IOException, InterruptedException {
         String InputFileName = this.inputFile.getName();
-        File OutputFile = new File(this.inputFile.getParent() + File.separator + this.getEncryptingFileName(InputFileName) + "cr");
+        // Full name plus .cr, not basename plus .cr: stripping the extension made
+        // a.bin and a.copy in one directory both encrypt to a.cr, the second
+        // silently overwriting the first.
+        File OutputFile = new File(this.inputFile.getParentFile(), InputFileName + ".cr");
         OutputFile.delete();
         this.FW = new FileWriter(this.inputFile, OutputFile, false);
         if (this.NoEnoughFreeSpace()) {
@@ -142,27 +144,4 @@ public class EncryptingSenario extends Senario {
         return (byte) c;
     }
 
-    /**
-     * Strips the extension from the source name so the output becomes
-     * {@code name.cr} (a name without an extension keeps a trailing dot).
-     *
-     * @param InputFileName original file name
-     * @return base name with a trailing dot, ready for the {@code cr} suffix
-     */
-    private String getEncryptingFileName(String InputFileName) {
-        StringTokenizer st = new StringTokenizer(InputFileName, ".");
-        if (st.countTokens() == 1)
-            return st.nextToken() + ".";
-        String name = "", extension = "", NToken;
-        while (st.hasMoreTokens())
-            extension = st.nextToken();
-        st = new StringTokenizer(InputFileName, ".");
-        while (st.hasMoreTokens()) {
-            NToken = st.nextToken();
-            if (extension.equals(NToken))
-                break;
-            name += NToken + ".";
-        }
-        return name;
-    }
 }

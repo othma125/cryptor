@@ -7,12 +7,15 @@ import Tools.InputParameters;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 /**
  * Headless command-line front end, so the cipher is scriptable and fuzz/bench
@@ -64,18 +67,32 @@ public class cli {
         boolean encrypt = args[0].equals("encrypt");
         // Leading flags in any order: -r/--recursive walks directories into their
         // subfolders; -d/--delete wipes each original after it encrypts (encrypt
-        // only); -y/--yes skips the deletion warning.
+        // only); -y/--yes skips the deletion warning. Short flags bundle the usual
+        // way, so -rdy is the same as -r -d -y.
         boolean recursive = false, deleteOriginal = false, assumeYes = false;
         int start = 1;
         while (start < args.length && args[start].startsWith("-")) {
-            switch (args[start]) {
-                case "-r": case "--recursive": recursive = true; break;
-                case "-d": case "--delete": deleteOriginal = true; break;
-                case "-y": case "--yes": assumeYes = true; break;
+            String opt = args[start];
+            switch (opt) {
+                case "--recursive": recursive = true; break;
+                case "--delete": deleteOriginal = true; break;
+                case "--yes": assumeYes = true; break;
                 default:
-                    System.err.println("unknown option: " + args[start]);
-                    System.err.println(usage);
-                    System.exit(2);
+                    if (opt.startsWith("--") || opt.length() < 2) {
+                        System.err.println("unknown option: " + opt);
+                        System.err.println(usage);
+                        System.exit(2);
+                    }
+                    for (char c : opt.substring(1).toCharArray())
+                        switch (c) {
+                            case 'r': recursive = true; break;
+                            case 'd': deleteOriginal = true; break;
+                            case 'y': assumeYes = true; break;
+                            default:
+                                System.err.println("unknown option: -" + c);
+                                System.err.println(usage);
+                                System.exit(2);
+                        }
             }
             start++;
         }
@@ -95,26 +112,28 @@ public class cli {
         }
 
         // A directory argument expands to the files inside it (top-level only,
-        // or every subfolder with -r). Encrypt takes every file but the .cr ones
-        // — re-encrypting foo.cr would strip and re-add .cr, overwriting the
-        // source — and decrypt takes only .cr files, skipping the rest.
+        // or every subfolder with -r). Encrypt takes every file but the .cr ones,
+        // so a second run over a directory re-encrypts the plaintext rather than
+        // stacking foo.txt.cr.cr, and decrypt takes only .cr files.
         java.util.List<File> fileList = new java.util.ArrayList<>();
         for (int i = start; i < args.length; i++) {
             File f = new File(args[i]).getAbsoluteFile();  // absolute so getParent() is never null on a bare name
             if (f.isDirectory()) {
                 if (recursive) {
-                    try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(f.toPath())) {
+                    try (Stream<Path> walk = Files.walk(f.toPath())) {
                         walk.filter(java.nio.file.Files::isRegularFile)
                                 .map(java.nio.file.Path::toFile)
                                 .filter(c -> c.getName().endsWith(".cr") != encrypt)
                                 .forEach(fileList::add);
                     }
-                } else {
+                }
+                else {
                     File[] inside = f.listFiles(c -> c.isFile() && c.getName().endsWith(".cr") != encrypt);
                     if (inside != null)
                         java.util.Collections.addAll(fileList, inside);
                 }
-            } else
+            }
+            else
                 fileList.add(f);   // an explicit file is processed as given, whatever its name
         }
         File[] files = fileList.toArray(new File[0]);
@@ -218,16 +237,16 @@ public class cli {
                     results[idx] = "not enough free space for: " + file.getName();
                     return false;
                 }
-                results[idx] = "encrypted -> " + new File(file.getParent(), stripExt(file.getName()) + ".cr");
-                if (deleteOriginal) {   // wipe the plaintext only once the .cr is safely written
+                results[idx] = "encrypted -> " + new File(file.getParent(), file.getName() + ".cr");
+                if (deleteOriginal)    // wipe the plaintext only once the .cr is safely written
                     try {
                         Tools.SecureDelete.wipe(file);
                         results[idx] += "  (original deleted)";
                     } catch (java.io.IOException e) {
                         results[idx] += "  (could not delete original: " + e.getMessage() + ")";
                     }
-                }
-            } else {
+            }
+            else {
                 if (((DecryptingSenario) sen).WrongPassword()) {
                     results[idx] = "wrong password or corrupted/tampered file: " + file.getName();
                     return false;
@@ -297,8 +316,7 @@ public class cli {
                 cancelledAny = true;
                 try {
                     worker.get();         // wait for the worker to delete the partial output
-                } catch (Exception ignored) {
-                }
+                } catch (Exception ignored) {}
             }
             if (cancelledAny)
                 System.err.println("\ncancelled; partial output removed.");
@@ -311,8 +329,7 @@ public class cli {
     private static void removeHook(Thread hook) {
         try {
             Runtime.getRuntime().removeShutdownHook(hook);
-        } catch (IllegalStateException alreadyShuttingDown) {
-        }
+        } catch (IllegalStateException alreadyShuttingDown) {}
     }
 
     /**
@@ -324,12 +341,12 @@ public class cli {
     private static char[] readPassword(String prompt) {
         char[] pw = null;
         try {
-            if (System.console() != null) {
+            if (System.console() != null) 
                 pw = System.console().readPassword(prompt);
-            } else {
+            else {
                 System.out.print(prompt);
                 String line = new BufferedReader(new InputStreamReader(System.in)).readLine();
-                pw = (line == null) ? null : line.toCharArray();
+                pw = line == null ? null : line.toCharArray();
             }
         } catch (Exception cancelledAtPrompt) {
             pw = null;
@@ -349,9 +366,9 @@ public class cli {
     private static boolean confirm(String prompt) {
         try {
             String line;
-            if (System.console() != null) {
+            if (System.console() != null) 
                 line = System.console().readLine(prompt);
-            } else {
+            else {
                 System.err.print(prompt);
                 line = new BufferedReader(new InputStreamReader(System.in)).readLine();
             }
@@ -362,11 +379,5 @@ public class cli {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    /** Base name without its final extension, matching the .cr naming the worker uses. */
-    private static String stripExt(String name) {
-        int dot = name.lastIndexOf('.');
-        return (dot < 0) ? name : name.substring(0, dot);
     }
 }

@@ -79,7 +79,7 @@ public class RoundTripTest {
         EncryptingSenario enc = new EncryptingSenario(plain, password);
         enc.execute();
         enc.get();
-        File encrypted = new File(dir, "plain.cr");
+        File encrypted = new File(dir, "plain.dat.cr");
         assertTrue(encrypted.isFile(), "encrypted file missing for size " + size);
 
         // wrong password must be detected, never reproduce the original
@@ -117,7 +117,7 @@ public class RoundTripTest {
         enc.execute();
         enc.Cancel();       // volatile flag: the worker loop must observe it and stop
         enc.get();          // must return without throwing
-        assertTrue(!new File(dir, "big.cr").exists(), "cancelled output file not deleted");
+        assertTrue(!new File(dir, "big.dat.cr").exists(), "cancelled output file not deleted");
 
         deleteRecursively(dir);
     }
@@ -158,7 +158,7 @@ public class RoundTripTest {
         enc.execute();
         enc.get();
 
-        File encrypted = new File(dir, "plain.cr");
+        File encrypted = new File(dir, "plain.dat.cr");
         byte[] cr = Files.readAllBytes(encrypted.toPath());
         cr[cr.length / 2] ^= 0x01;
         Files.write(encrypted.toPath(), cr);
@@ -182,7 +182,7 @@ public class RoundTripTest {
         EncryptingSenario enc = new EncryptingSenario(plain, password);
         enc.execute();
         enc.get();
-        byte[] cipher = Files.readAllBytes(new File(dir, "plain.cr").toPath());
+        byte[] cipher = Files.readAllBytes(new File(dir, "plain.dat.cr").toPath());
 
         deleteRecursively(dir);
         return cipher;

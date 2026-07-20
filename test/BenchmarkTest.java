@@ -45,7 +45,7 @@ public class BenchmarkTest {
         Arrays.fill(salt, (byte) 0x2A);
 
         // one warm-up round-trip that also serves as the correctness check
-        File cr = new File(dir, "bench.cr");
+        File cr = new File(dir, "bench.dat.cr");
         double encMbps = timeEncrypt(plain, salt, size);
         double decMbps = timeDecrypt(cr, size);
         byte[] roundTripped = Files.readAllBytes(new File(dir, "bench.dat").toPath());
