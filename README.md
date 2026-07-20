@@ -22,7 +22,7 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Streamed I/O** — the file moves through 1024-byte blocks and bounded queues, never fully into memory. *Advantage:* file size is limited by disk, not RAM.
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
 - **Optional deep-delete of the original** — encryption can wipe the source once the `.cr` is safely written (GUI checkbox, or `-d` on the CLI): the plaintext is overwritten with random bytes and flushed to disk before the file is unlinked. *Advantage:* the cleartext isn't left behind for an undelete tool. *Caveat:* on an SSD or copy-on-write filesystem, wear-levelling means the overwrite may not reach the original blocks — this defeats casual recovery, not forensic recovery on flash.
-- **Command-line mode** — `cli encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
+- **Command-line mode** — `Cli.Main encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
 - **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
 ## How it works
@@ -92,7 +92,13 @@ This part is solid:
 | Path | Description |
 |---|---|
 | `src/Main.java` | Entry point; sets the system look-and-feel and opens the main window |
-| `src/cli.java` | Headless command-line front end (`encrypt`/`decrypt`), driving the same workers as the GUI |
+| `src/Cli/` | Headless command-line front end (`Cli` package), driving the same workers as the GUI |
+| `src/Cli/Main.java` | CLI entry point; wiring only — parse, resolve, confirm, ask, run, report — and the one place that sets an exit code |
+| `src/Cli/Options.java` | One parsed command line (mode, flags, paths) and the directory expansion those flags imply; raises `UsageException` instead of exiting |
+| `src/Cli/Batch.java` | Runs a batch: owns the thread pool, the shared bar, and the Ctrl+C hook |
+| `src/Cli/FileTask.java` | One file's share of a batch; runs a worker and keeps its own outcome |
+| `src/Cli/ProgressBar.java` | Thread-safe aggregate progress bar drawn on stderr |
+| `src/Cli/Prompt.java` | One interactive question (password without echo, or a yes/no), from the console or piped stdin |
 | `src/MainFrame.java` | Swing UI: Encrypt / Decrypt / About tabs, file chooser, progress, dialogs |
 | `src/Encryption/` | The cipher and I/O engine (`Encryption` package, see below) |
 | `src/Encryption/Senario.java` | Abstract base for both workers; holds the shared bit-packing state and the encode/decode logic that is identical in both directions |
@@ -125,17 +131,17 @@ The **Browse** button takes multiple files (ctrl/shift-click). They run one afte
 
 ### Command-line mode
 
-For scripting or headless use, `cli` encrypts/decrypts without the GUI:
+For scripting or headless use, `Cli.Main` encrypts/decrypts without the GUI:
 
 ```
-javac -d out src/*.java src/Encryption/*.java src/Tools/*.java
-java -cp out cli encrypt [-r] [-d [-y]] path/to/file-or-dir [more ...]   # prompts for the password
-java -cp out cli decrypt [-r] path/to/file-or-dir [more ...]             # prompts for the password
+javac -d out src/*.java src/Cli/*.java src/Encryption/*.java src/Tools/*.java
+java -cp out Cli.Main encrypt [-r] [-d [-y]] path/to/file-or-dir [more ...]   # prompts for the password
+java -cp out Cli.Main decrypt [-r] path/to/file-or-dir [more ...]             # prompts for the password
 ```
 
 Several files can be given in one call (handy for a drag-and-drop selection): the password is asked once and applied to the whole batch, and a file that fails — missing, wrong password, no free space — is reported and skipped while the rest continue, with a non-zero exit if any failed.
 
-A **directory** argument expands to the files inside it — directly inside by default, or in every subfolder with **`-r`** (`--recursive`), placed right after the command. `encrypt` takes every file except existing `.cr` ones — so a second run over a directory re-encrypts the plaintext rather than stacking `foo.txt.cr.cr` — and `decrypt` takes only `.cr` files, skipping the rest. So `cli encrypt mydir` encrypts a whole folder, `cli decrypt -r mydir` decrypts every `.cr` under a tree, in one call. An explicit file argument is always processed as given, whatever its name.
+A **directory** argument expands to the files inside it — directly inside by default, or in every subfolder with **`-r`** (`--recursive`), placed right after the command. `encrypt` takes every file except existing `.cr` ones — so a second run over a directory re-encrypts the plaintext rather than stacking `foo.txt.cr.cr` — and `decrypt` takes only `.cr` files, skipping the rest. So `Cli.Main encrypt mydir` encrypts a whole folder, `Cli.Main decrypt -r mydir` decrypts every `.cr` under a tree, in one call. An explicit file argument is always processed as given, whatever its name.
 
 **`-d`** (`--delete`) makes encryption **delete each original after it is encrypted**, once the `.cr` is safely written — a deep delete, not just an unlink: the source is overwritten with random bytes and flushed to disk first, so it can't be recovered with an undelete tool (see the caveat under [Features](#features) — this is best-effort on SSDs). Because it destroys data, `-d` prints a one-line warning for the whole batch and waits for a `y` before touching anything; **`-y`** (`--yes`) skips that prompt for non-interactive/scripted use. `-d` is encrypt-only — passing it to `decrypt` is an error, since decryption never owns the `.cr`'s original. In the GUI the same option is the **"Delete original file after encryption"** checkbox on the Encrypt tab, which pops a confirmation before the run.
 
