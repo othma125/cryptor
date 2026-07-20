@@ -5,6 +5,7 @@ import Encryption.Senario;
 import java.io.File;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
 
@@ -78,7 +79,7 @@ final class Batch {
                 cancelledAny = true;
                 try {
                     worker.get();         // wait for the worker to delete the partial output
-                } catch (Exception ignored) {}
+                } catch (InterruptedException | ExecutionException ignored) {}
             }
             if (cancelledAny)
                 System.err.println("\ncancelled; partial output removed.");
