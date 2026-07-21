@@ -604,6 +604,8 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
      */
     private void StartNext() {
         this.SelectedFile = this.Queue[this.QueueIndex];
+        if (this.QueueIndex == 0)
+            this.jProgressBar.setValue(0);   // fresh pick starts empty; mid-queue the bar keeps advancing
         if (this.Queue.length > 1)
             this.setTitle(this.Name + " (" + (this.QueueIndex + 1) + "/" + this.Queue.length + ")");
         this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
@@ -870,11 +872,12 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     public void propertyChange(PropertyChangeEvent evt) {
         if ("progress".matches(evt.getPropertyName())) {
             int progress = (int) evt.getNewValue();
-            this.jProgressBar.setValue(progress);
+            // Draw one continuous bar across the whole pick, like the CLI's aggregate
+            // bar: files run one at a time, so overall = (done*100 + current)/total.
+            this.jProgressBar.setValue((this.QueueIndex * 100 + progress) / this.Queue.length);
             if (progress == 100) {
                 this.setCursor(null);
                 this.jButton_Cancel.setEnabled(false);
-                this.jProgressBar.setValue(0);
                 this.setTitle(this.Name);   // StartNext re-stamps the counter if the queue continues
                 if (this.jTabbedPane.getSelectedIndex() == 0) {
                     if (this.EncSen.isCanceled()) {
