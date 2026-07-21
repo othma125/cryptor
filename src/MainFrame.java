@@ -446,7 +446,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             }
         });
 
-        jCheckBox_OpenFile.setText("Open the decrypted file");
+        jCheckBox_OpenFile.setText("Open the decrypted files");
 
         javax.swing.GroupLayout DecryptingPanelLayout = new javax.swing.GroupLayout(DecryptingPanel);
         DecryptingPanel.setLayout(DecryptingPanelLayout);
