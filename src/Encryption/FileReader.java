@@ -2,6 +2,9 @@ package Encryption;
 
 
 import Tools.InputParameters;
+import Tools.SecureDelete;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 
@@ -16,6 +19,7 @@ import java.io.RandomAccessFile;
  */
 public class FileReader extends BlockIO {
 
+    private final File sourceFile;
     private final RandomAccessFile inputRAF;
     // consumer-thread state only:
     private byte[] current = null;
@@ -23,10 +27,23 @@ public class FileReader extends BlockIO {
     private boolean eof = false;
 
     /**
-     * @param RAF random access file to read (assigned to {@code inputRAF})
+     * @param source file to read; kept so its plaintext can be securely wiped
+     * once encryption has finished with it (see {@link #wipeSource()})
      */
-    public FileReader(RandomAccessFile RAF) {
-        this.inputRAF = RAF;
+    public FileReader(File source) throws FileNotFoundException {
+        this.sourceFile = source;
+        this.inputRAF = new RandomAccessFile(source, "r");
+    }
+
+    /**
+     * Securely overwrites and unlinks the source file this reader consumed. Must
+     * be called only once the encrypted output is safely on disk, never on a
+     * decrypt run: the read handle is already closed by then (this reader's
+     * {@code doInBackground} closes it at end of stream), so the wipe can reopen
+     * the file for the overwrite. See {@link SecureDelete}.
+     */
+    void wipeSource() throws IOException {
+        SecureDelete.wipe(this.sourceFile);
     }
 
     @Override

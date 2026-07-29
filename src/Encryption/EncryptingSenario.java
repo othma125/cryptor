@@ -36,6 +36,18 @@ public class EncryptingSenario extends Senario {
      */
     private final Mac mac;
 
+    /**
+     * When set, the plaintext source is securely wiped once the {@code .cr} is
+     * safely written (GUI checkbox / CLI {@code -d}). Set before {@link #execute()}.
+     */
+    public boolean deleteOriginal = false;
+
+    /**
+     * Non-null if {@link #deleteOriginal} was requested but the wipe failed; the
+     * encryption still succeeded. Callers read it to report the wipe outcome.
+     */
+    public IOException deleteError = null;
+
     public EncryptingSenario(File file, char[] password) {
         this(file, password, randomSalt());
     }
@@ -145,6 +157,12 @@ public class EncryptingSenario extends Senario {
         for (byte b : this.mac.doFinal())   // tag last: written raw, never chained or substituted
             this.FW.WriteByte(b);
         this.FW.EndWriting();
+        if (this.deleteOriginal)   // wipe the plaintext only now the .cr is fully on disk
+            try {
+                this.FW.WipeInputFile();
+            } catch (IOException wipeFailed) {
+                this.deleteError = wipeFailed;   // encryption still succeeded; caller reports the wipe outcome
+            }
         return null;
     }
 

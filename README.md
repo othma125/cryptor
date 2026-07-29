@@ -106,7 +106,7 @@ This part is solid:
 | `src/Encryption/EncryptingSenario.java` | Encryption worker (file → `.cr`); extends `Senario` |
 | `src/Encryption/DecryptingSenario.java` | Decryption worker (`.cr` → original file), with MAC verification and wrong-password detection; extends `Senario` |
 | `src/Encryption/BlockIO.java` | Abstract base for both I/O workers; holds the bounded block queue, the EOF sentinel and the cancellation plumbing they share |
-| `src/Encryption/FileReader.java` / `src/Encryption/FileWriter.java` | Threaded block I/O with progress and cancellation; extend `BlockIO` |
+| `src/Encryption/FileReader.java` / `src/Encryption/FileWriter.java` | Threaded block I/O with progress and cancellation; extend `BlockIO`. `FileReader` owns the source file, so it also securely wipes it (via `SecureDelete`) once encryption asks for a deep delete |
 | `src/Encryption/Order.java` | Password-derived permutations, PBKDF2 key derivation, per-block sub-keys and the MAC key |
 | `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps), `SecureDelete` (best-effort deep-delete of the original after encryption), `FileScan` (expands dropped/argument paths into the files to work on, shared by the GUI and CLI) |
 | `InputParameters` | Required data file, loaded at startup from the working directory |

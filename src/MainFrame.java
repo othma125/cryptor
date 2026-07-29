@@ -611,6 +611,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         if (this.jTabbedPane.getSelectedIndex() == 0) {
             this.EncSen = new EncryptingSenario(this.SelectedFile, this.EncryptingPassword1.getPassword());
+            this.EncSen.deleteOriginal = this.jCheckBox_DeleteOriginal.isSelected();
             this.EncSen.addPropertyChangeListener(this);
             this.EncSen.execute();
         } else {
@@ -891,15 +892,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
                         this.EncSen = null;
                     }
                     else {
-                        if (this.jCheckBox_DeleteOriginal.isSelected()) {
-                            try {
-                                Tools.SecureDelete.wipe(this.SelectedFile);
-                            } catch (IOException wipeFailed) {
-                                JOptionPane.showMessageDialog(this,
-                                        "Encrypted, but the original could not be deleted:\n" + wipeFailed.getMessage(),
-                                        this.Name, JOptionPane.WARNING_MESSAGE);
-                            }
-                        }
+                        if (this.EncSen.deleteError != null)   // encryption succeeded; only the wipe failed
+                            JOptionPane.showMessageDialog(this,
+                                    "Encrypted, but the original could not be deleted:\n" + this.EncSen.deleteError.getMessage(),
+                                    this.Name, JOptionPane.WARNING_MESSAGE);
                         if (++this.QueueIndex < this.Queue.length) {   // more picked files: run the next one
                             this.EncSen = null;
                             this.StartNext();

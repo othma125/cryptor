@@ -51,7 +51,7 @@ public class FileWriter extends BlockIO {
      */
     public FileWriter(File InputFile, File OF, boolean decrypt) throws IOException, InterruptedException {
         this.outputFile = OF;
-        this.FR = new FileReader(new RandomAccessFile(InputFile, "r"));
+        this.FR = new FileReader(InputFile);
         long size = this.FR.getFileSize();
         // header = 2*nameLen + 2 bytes; a per-file salt is prepended and a MAC tag
         // appended, both in the clear.
@@ -163,5 +163,14 @@ public class FileWriter extends BlockIO {
 
     void OpenOutputFile() {
         this.openOutputFile = true;
+    }
+
+    /**
+     * Securely wipes the input file the reader consumed. The caller invokes this
+     * only after {@link #EndWriting()} has returned, so the {@code .cr} is fully
+     * on disk before the plaintext is destroyed.
+     */
+    void WipeInputFile() throws IOException {
+        this.FR.wipeSource();
     }
 }

@@ -5,7 +5,6 @@ import Encryption.DecryptingSenario;
 import Encryption.EncryptingSenario;
 import Encryption.Senario;
 import java.io.File;
-import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -65,6 +64,8 @@ final class FileTask implements Callable<Void> {
         Senario sen = this.options.encrypting()
                 ? new EncryptingSenario(this.file, this.password)
                 : new DecryptingSenario(this.file, this.password, false);
+        if (this.options.encrypting() && this.options.deleteOriginal)
+            ((EncryptingSenario) sen).deleteOriginal = true;   // wiped by the worker once the .cr is written
         sen.addPropertyChangeListener(e -> {
             if ("progress".equals(e.getPropertyName()))
                 this.bar.set(this.slot, (int) e.getNewValue());
@@ -89,13 +90,9 @@ final class FileTask implements Callable<Void> {
             return false;
         }
         this.result = "encrypted -> " + sen.OutputFile();   // ask the run: the name may carry a (n) collision suffix
-        if (this.options.deleteOriginal)   // wipe the plaintext only once the .cr is safely written
-            try {
-                Tools.SecureDelete.wipe(this.file);
-                this.result += "  (original deleted)";
-            } catch (IOException e) {
-                this.result += "  (could not delete original: " + e.getMessage() + ")";
-            }
+        if (this.options.deleteOriginal)   // the worker wiped the plaintext once the .cr was safely written
+            this.result += sen.deleteError == null ? "  (original deleted)"
+                    : "  (could not delete original: " + sen.deleteError.getMessage() + ")";
         return true;
     }
 
