@@ -126,6 +126,8 @@ java -jar dist/Cryptor.jar
 
 On Windows you can instead run the generated `dist/Cryptor.exe`.
 
+To run the GUI straight from source without Ant, use `./runUI.sh` (it runs `./compile.sh` then launches `Main`).
+
 > **Note:** the `InputParameters` file must be present in the working directory, otherwise the app blocks encryption/decryption.
 
 **Drag and drop** files or folders onto the window as an alternative to Browse. The active tab decides what is kept: the Decrypt tab takes only `.cr` files and the Encrypt tab takes everything except `.cr`, so a drop can't feed a file to the wrong side. A dropped **folder** is expanded through its subfolders — the CLI's `-r`. If nothing in the drop suits the tab, the selection is left alone and a dialog says so. Drops are ignored while a run is in progress. The title bar shows what is queued.
