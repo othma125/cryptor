@@ -1,7 +1,17 @@
 #!/bin/bash
 
-# Compile all Java files in the project
-rm -rf out
+# Compile Java files modified since the last successful build ( --clean forces a full rebuild )
+[ "$1" = "--clean" ] && rm -rf out
 mkdir -p out
-javac -encoding UTF-8 -d out -sourcepath src \
-    $(find src -name '*.java')
+
+stamp=out/.build-stamp
+[ -f "$stamp" ] && newer=(-newer "$stamp")
+
+files=$(find src -name '*.java' "${newer[@]}")
+
+if [ -z "$files" ]; then
+    echo "Nothing to compile."
+    exit 0
+fi
+
+javac -encoding UTF-8 -d out -cp out -sourcepath src $files && touch "$stamp"
