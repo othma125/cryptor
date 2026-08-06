@@ -113,6 +113,7 @@ This part is solid:
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
 | `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
 | `test/BenchmarkTest.java` | Encrypt/decrypt throughput benchmark across file sizes |
+| `test.sh` | Compiles and runs one test class (`RoundTripTest` by default); see [Testing](#testing) |
 | `dist/` | Build output produced by `ant jar` (`Cryptor.jar` / `Cryptor.exe`), tracked so the jar is runnable straight from a clone |
 
 ## Running
@@ -168,7 +169,15 @@ ant jar
 
 ## Testing
 
-Run the round-trip test from the project root (so the `InputParameters` file is found):
+Use `./test.sh`, which runs `./compile.sh`, compiles `test/*.java` and launches one test class with `-ea`. Run it from the project root (so the `InputParameters` file is found):
+
+```
+./test.sh                    # RoundTripTest, the default
+./test.sh CryptanalysisTest
+./test.sh BenchmarkTest
+```
+
+The equivalent by hand, if you would rather not use the script:
 
 ```
 javac -d out src/*.java src/Encryption/*.java src/Tools/*.java test/*.java
@@ -179,21 +188,27 @@ It encrypts and decrypts random files of various sizes with several passwords (i
 
 The empty-password case covers the engine, which still derives a key from one; it is the UI that refuses to encrypt without a password.
 
-To reproduce the [Design analysis](#design-analysis) numbers, run the cryptanalysis smoke test the same way:
+To reproduce the [Design analysis](#design-analysis) numbers, run the cryptanalysis smoke test:
 
 ```
-java -ea -cp out CryptanalysisTest
+./test.sh CryptanalysisTest
 ```
 
 Each of tests [1]–[7] prints a `BROKEN`/`survived` verdict. Tests [1]–[3] cover diffusion, constant-input periodicity and randomization; [4]–[7] are the standard statistical battery: bit-level avalanche, key avalanche, uniformity (NIST-style monobit + byte chi-square) and serial correlation. After the verdict, tests [A]–[C] print the *attacks* from [ALGORITHM_DIRECTIONS.md](ALGORITHM_DIRECTIONS.md): [A] the exact 16-step keyspace, [B] the measured PBKDF2 guessing cost, and [C] a known-plaintext recovery of the grid order (run with `-ea` — the attack's success doubles as its correctness check, asserting the true order is recovered).
 
-To measure throughput, run the benchmark the same way (from the project root, no `-ea` needed):
+To measure throughput, run the benchmark the same way:
 
 ```
-java -cp out BenchmarkTest
+./test.sh BenchmarkTest
 ```
 
 It encrypts and decrypts 1/4/16 MB files and prints MB/s for each direction (decryption trails encryption because it reads the file twice — once to verify the MAC, once to decode).
+
+### How the suites are kept fast
+
+`test.sh` sets `-Dcryptor.kdf.cache=true`, which memoizes the PBKDF2 stretch in `Order.getPassword` for the run. The suites re-derive the same key from a fixed password and salt well over a hundred times, and that flag cuts `CryptanalysisTest` from ~37 s to ~27 s. It is off by default everywhere else — real files carry a random per-file salt, so a cache would almost never hit in normal use and would only keep passwords and derived keys reachable in a static map for the life of the process. The script skips the flag for `BenchmarkTest`, whose decrypt pass reuses the encrypt pass's salt and would otherwise report a cache hit as throughput; `kdfCost` ([B]) varies its salt per guess for the same reason.
+
+`RoundTripTest`'s 32 round-trips and `CryptanalysisTest`'s [1], [2], [4] and [5] run as parallel streams. Each trial draws its plaintext up front and the results are reduced in index order, so the numbers are identical to a serial run whatever order the threads finish in. To check that, run one serially with `java -ea -Djava.util.concurrent.ForkJoinPool.common.parallelism=1 -cp out CryptanalysisTest` and diff it against the parallel output; only the two tests that use a random salt ([6] and [7]) and the [B] timing should move. `cancelMidFlight` and [B] stay serial because both are timing-sensitive.
 
 ### Latest results
 
