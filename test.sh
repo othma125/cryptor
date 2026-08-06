@@ -11,4 +11,11 @@ cd "$(dirname "$0")"
 
 javac -encoding UTF-8 -d out -cp out -sourcepath src test/*.java
 
-java -ea -cp out "${1:-RoundTripTest}"
+test="${1:-RoundTripTest}"
+
+# Memoize the PBKDF2 stretch: the suites re-derive the same key from a fixed
+# password and salt hundreds of times. Off for BenchmarkTest, whose decrypt pass
+# reuses the encrypt pass's salt and would report a cache hit as throughput.
+[ "$test" = BenchmarkTest ] || kdf=-Dcryptor.kdf.cache=true
+
+java -ea $kdf -cp out "$test"

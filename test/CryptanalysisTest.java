@@ -388,8 +388,12 @@ public class CryptanalysisTest {
         char[] pw = "password".toCharArray();
         Order.getPassword(pw, salt);   // warm up JIT / provider init
         long t0 = System.nanoTime();
-        for (int i = 0; i < trials; i++)
+        // Distinct salt per guess, so this times real PBKDF2 stretches even when
+        // -Dcryptor.kdf.cache=true is set for the rest of the run.
+        for (int i = 0; i < trials; i++) {
+            salt[0] = (byte) i;
             Order.getPassword(pw, salt);
+        }
         double perGuess = (System.nanoTime() - t0) / 1e9 / trials;
         double rate = 1 / perGuess;
 

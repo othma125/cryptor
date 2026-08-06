@@ -8,6 +8,9 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.IntStream;
 import javax.crypto.Mac;
 import javax.crypto.SecretKeyFactory;
@@ -119,6 +122,31 @@ public class Order {
         // PBEKeySpec rejects an empty password; a placeholder keeps blank
         // passwords working (still per-file unique via the salt).
         char[] pw = (password.length == 0) ? new char[]{'\0'} : password;
+        if (kdfCache == null)
+            return derive(pw, salt);
+        // Base64 of the salt is fixed-width and ':'-free, so the key is unambiguous.
+        return kdfCache.computeIfAbsent(Base64.getEncoder().encodeToString(salt) + ':' + new String(pw),
+                k -> derive(pw, salt));
+    }
+
+    /**
+     * Opt-in memo for {@link #getPassword}, enabled only by
+     * {@code -Dcryptor.kdf.cache=true} (which the test scripts set and nothing
+     * else does). The test suites derive the same key from a fixed password and
+     * salt well over a hundred times, and PBKDF2 is deliberately expensive.
+     *
+     * <p>
+     * Deliberately off by default: real files carry a random per-file salt, so a
+     * cache would almost never hit in normal use, and all it would achieve is
+     * keeping passwords and derived keys reachable in a static map for the life
+     * of the process. Left null, the stretching cost of an actual encryption is
+     * unchanged and nothing is retained.
+     */
+    private static final Map<String, BigInteger> kdfCache =
+            Boolean.getBoolean("cryptor.kdf.cache") ? new ConcurrentHashMap<>() : null;
+
+    /** The PBKDF2 stretch itself, bypassing {@link #kdfCache}. */
+    private static BigInteger derive(char[] pw, byte[] salt) {
         try {
             PBEKeySpec spec = new PBEKeySpec(pw, salt, 100_000, 256);
             byte[] dk = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
