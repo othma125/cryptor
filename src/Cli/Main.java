@@ -20,7 +20,7 @@ import java.util.Arrays;
  * </pre>
  *
  * This class is wiring only — parse, resolve, confirm, ask, run, report — with
- * the work in {@link Options}, {@link Batch}, {@link FileTask} and
+ * the work in {@link Options}, {@link Batch}, {@link Tools.BatchRun} and
  * {@link Prompt}. It is also the one place that calls {@code System.exit}, so
  * every exit code the CLI can produce is visible in a single method.
  *
@@ -76,12 +76,12 @@ public class Main {
         }
 
         char[] password = askPassword(options);
-        FileTask[] done = new Batch(files, options, password).run();
+        Tools.BatchRun.Result[] done = new Batch(files, options, password).run();
 
         int failures = 0;
-        for (FileTask task : done) {
-            System.out.println(task.result());
-            if (!task.succeeded())
+        for (Tools.BatchRun.Result r : done) {
+            System.out.println(Batch.describe(r, options));
+            if (!r.succeeded())
                 failures++;
         }
         if (failures > 0)

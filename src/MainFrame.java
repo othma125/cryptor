@@ -1,27 +1,35 @@
 
 import Encryption.DecryptingSenario;
 import Encryption.EncryptingSenario;
+import Tools.BatchRun;
 import Tools.InputParameters;
 import java.awt.Cursor;
 import java.awt.Image;
 import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.UnsupportedFlavorException;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 import javax.swing.TransferHandler;
 import javax.swing.filechooser.FileFilter;
 
 /**
  * Main application window: an Encrypt/Decrypt/About tabbed UI. Lets the user
- * pick a file, enter a password, and runs the corresponding
- * {@link EncryptingSenario}/{@link DecryptingSenario} on a background thread,
- * wiring their progress into the progress bar and result dialogs.
+ * pick files, enter a password, and hands the whole pick to a {@link BatchRun},
+ * wiring its aggregate progress into the progress bar and its outcomes into the
+ * result dialogs.
+ *
+ * <p>
+ * The window owns no worker of its own: {@link BatchRun} runs the files in
+ * parallel and decides what happened to each, exactly as it does for the CLI,
+ * and this class only decides what to say about it. That is why there is one
+ * {@link #batch} field here rather than a scenario per direction — the UI no
+ * longer tracks "the running worker", because there is more than one.
  *
  * <p>
  * Encryption refuses an empty password rather than falling back to a built-in
@@ -30,18 +38,16 @@ import javax.swing.filechooser.FileFilter;
  *
  * @author Othmane
  */
-public class MainFrame extends javax.swing.JFrame implements PropertyChangeListener {
+public class MainFrame extends javax.swing.JFrame {
 
     final String Name = "Cryptor";
     final String DesktopPath = System.getProperty("user.home") + File.separator + "Desktop";
     JFileChooser FC;
-    File SelectedFile;
-    // The chooser is multi-selection: Queue holds every picked file and
-    // QueueIndex the one currently running. A single pick is just a queue of 1.
+    // The chooser is multi-selection and a dropped folder expands through its
+    // subfolders, so Queue holds every picked file. A single pick is a queue of 1.
     File[] Queue = new File[0];
-    int QueueIndex = 0;
-    EncryptingSenario EncSen = null;
-    DecryptingSenario DecSen = null;
+    /** The running batch, or null when idle: the one "busy" flag the window reads. */
+    private BatchRun batch = null;
     Image Logo = Toolkit.getDefaultToolkit().getImage("Icon.gif");
 
     /**
@@ -568,14 +574,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         // TODO add your handling code here:
         this.jTabbedPane.setEnabled(true);
         this.setEnabled(true);
-        if (this.jTabbedPane.getSelectedIndex() == 0) {
+        if (this.jTabbedPane.getSelectedIndex() == 0)
             this.DecryptingButton.setEnabled(false);
-            this.EncSen = null;
-        }
-        else {
+        else
             this.EncryptingButton.setEnabled(false);
-            this.DecSen = null;
-        }
         this.jDialog_Done.setVisible(false);
     }//GEN-LAST:event_jButton_DoneActionPerformed
     private void jButton_WrongPasswordActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_WrongPasswordActionPerformed
@@ -587,42 +589,64 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     }//GEN-LAST:event_jButton_WrongPasswordActionPerformed
     private void DecryptingButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_DecryptingButtonActionPerformed
         // TODO add your handling code here:
-        if (this.DecSen != null) {
+        if (this.batch != null) {
             return;
         }
         this.jTabbedPane.setEnabled(false);
         // An empty password needs no special case: encryption never accepts one,
         // so it always fails the MAC and lands in the wrong-password dialog.
-        this.QueueIndex = 0;
-        this.StartNext();
+        this.StartBatch();
     }//GEN-LAST:event_DecryptingButtonActionPerformed
 
     /**
-     * Runs {@code Queue[QueueIndex]} on the current tab's scenario. Called once
-     * per file: {@link #propertyChange} advances the index and calls back here
-     * until the queue is exhausted, so a multi-file pick runs one at a time.
+     * Hands the whole queue to a {@link BatchRun} and returns immediately. The
+     * batch works through the files in parallel and calls back with the aggregate
+     * percentage; {@link #Finished} shows the outcome once every file is done.
+     *
+     * <p>
+     * The batch is waited on by a plain {@link Thread}, deliberately not a
+     * {@code SwingWorker}: three concurrent files already hold nine of that
+     * pool's ten threads, so a worker parked here waiting on them could starve
+     * the very readers it is waiting for.
      */
-    private void StartNext() {
-        this.SelectedFile = this.Queue[this.QueueIndex];
-        if (this.QueueIndex == 0)
-            this.jProgressBar.setValue(0);   // fresh pick starts empty; mid-queue the bar keeps advancing
-        if (this.Queue.length > 1)
-            this.setTitle(this.Name + " (" + (this.QueueIndex + 1) + "/" + this.Queue.length + ")");
+    private void StartBatch() {
+        boolean encrypting = this.jTabbedPane.getSelectedIndex() == 0;
+        this.jProgressBar.setValue(0);
         this.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        if (this.jTabbedPane.getSelectedIndex() == 0) {
-            this.EncSen = new EncryptingSenario(this.SelectedFile, this.EncryptingPassword1.getPassword());
-            this.EncSen.deleteOriginal = this.jCheckBox_DeleteOriginal.isSelected();
-            this.EncSen.addPropertyChangeListener(this);
-            this.EncSen.execute();
-        } else {
-            this.DecSen = new DecryptingSenario(this.SelectedFile, this.DecryptingPassword.getPassword(), this.jCheckBox_OpenFile.isSelected());
-            this.DecSen.addPropertyChangeListener(this);
-            this.DecSen.execute();
-        }
+        this.batch = new BatchRun(this.Queue, encrypting,
+                encrypting && this.jCheckBox_DeleteOriginal.isSelected(),
+                !encrypting && this.jCheckBox_OpenFile.isSelected(),
+                encrypting ? this.EncryptingPassword1.getPassword() : this.DecryptingPassword.getPassword(),
+                this::Advanced);
+        final BatchRun running = this.batch;
+        new Thread(() -> {
+            BatchRun.Result[] results;
+            try {
+                results = running.run();
+            } catch (Exception failed) {
+                results = null;
+            }
+            final BatchRun.Result[] done = results;
+            SwingUtilities.invokeLater(() -> this.Finished(done));
+        }, "cryptor-batch").start();
+    }
+
+    /**
+     * Aggregate progress from the batch, on a worker thread — hence the hop to
+     * the EDT before touching any widget.
+     */
+    private void Advanced(int overall, int filesDone, int filesTotal) {
+        SwingUtilities.invokeLater(() -> {
+            this.jProgressBar.setValue(overall);
+            if (filesTotal > 1)
+                this.setTitle(this.Name + " (" + filesDone + "/" + filesTotal + ")");
+            if (overall > 0 && !this.jButton_Cancel.isEnabled())
+                this.jButton_Cancel.setEnabled(true);
+        });
     }
     private void DecryptingBrowserButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_DecryptingBrowserButtonActionPerformed
         // TODO add your handling code here:
-        if (this.DecSen != null) 
+        if (this.batch != null) 
             return;
         this.DecryptingButton.setEnabled(false);
         this.DecryptingPassword.setText("");
@@ -652,7 +676,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     }//GEN-LAST:event_DecryptingBrowserButtonActionPerformed
     private void EncryptingButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_EncryptingButtonActionPerformed
         // TODO add your handling code here:
-        if (this.EncSen != null) 
+        if (this.batch != null) 
             return;
         this.jTabbedPane.setEnabled(false);
         char[] password1 = this.EncryptingPassword1.getPassword();
@@ -673,8 +697,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
             this.jTabbedPane.setEnabled(true);
             return;
         }
-        this.QueueIndex = 0;
-        this.StartNext();
+        this.StartBatch();
     }//GEN-LAST:event_EncryptingButtonActionPerformed
     /**
      * Shows the password-rejected dialog with {@code message}, for the two ways
@@ -692,7 +715,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     }
     private void EncryptingBrowserButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_EncryptingBrowserButtonActionPerformed
         // TODO add your handling code here:
-        if (this.EncSen != null) 
+        if (this.batch != null) 
             return;
         this.EncryptingButton.setEnabled(false);
         this.EncryptingPassword1.setText("");
@@ -725,7 +748,7 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         public boolean canImport(TransferSupport support) {
             return support.isDrop()
                     && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
-                    && MainFrame.this.EncSen == null && MainFrame.this.DecSen == null;   // not mid-run
+                    && MainFrame.this.batch == null;   // not mid-run
         }
 
         @Override
@@ -764,7 +787,6 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
      */
     private void Accept(File[] files, boolean encrypting) {
         this.Queue = files;
-        this.QueueIndex = 0;
         if (encrypting) {
             this.EncryptingPassword1.setText("");
             this.EncryptingPassword2.setText("");
@@ -810,14 +832,10 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
         // TODO add your handling code here:
         this.jTabbedPane.setEnabled(true);
         this.setEnabled(true);
-        if (this.jTabbedPane.getSelectedIndex() == 0) {
+        if (this.jTabbedPane.getSelectedIndex() == 0)
             this.DecryptingButton.setEnabled(false);
-            this.EncSen = null;
-        }
-        else {
+        else
             this.EncryptingButton.setEnabled(false);
-            this.DecSen = null;
-        }
     }//GEN-LAST:event_jDialog_DoneWindowClosing
     private void jDialog_PasswordsDoNotMatchWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_jDialog_PasswordsDoNotMatchWindowClosing
         // TODO add your handling code here:
@@ -830,10 +848,13 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     }//GEN-LAST:event_jDialog_PasswordsDoNotMatchWindowClosing
     private void jButton_CancelActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_CancelActionPerformed
         // TODO add your handling code here:
-        if (this.jTabbedPane.getSelectedIndex() == 0)
-            this.EncSen.Cancel();
-        else
-            this.DecSen.Cancel();
+        final BatchRun running = this.batch;
+        if (running == null)
+            return;
+        this.jButton_Cancel.setEnabled(false);   // one press is enough
+        // cancel() blocks until every worker has removed its partial output, so
+        // it cannot run on the EDT; Finished still arrives from the batch thread.
+        new Thread(running::cancel, "cryptor-cancel").start();
     }//GEN-LAST:event_jButton_CancelActionPerformed
     private void jButton_NoEnoughFreeSpaceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton_NoEnoughFreeSpaceActionPerformed
         // TODO add your handling code here:
@@ -865,91 +886,114 @@ public class MainFrame extends javax.swing.JFrame implements PropertyChangeListe
     }
 
     /**
-     * Receives progress updates from the running scenario, drives the progress
-     * bar, and at 100% dispatches to the right end-state dialog (done, wrong
-     * password, no space, or cancelled).
+     * Called on the EDT once every file in the batch is done, with the outcomes
+     * in the order they were picked.
+     *
+     * <p>
+     * One dialog covers the whole pick rather than one per file: with files
+     * running in parallel there is no longer a "current" file a modal could
+     * belong to, and a dozen stacked dialogs would be worse than a list. A
+     * single-file pick still gets its dedicated dialog, so the common case looks
+     * exactly as it always has.
      */
-    @Override
-    public void propertyChange(PropertyChangeEvent evt) {
-        if ("progress".matches(evt.getPropertyName())) {
-            int progress = (int) evt.getNewValue();
-            // Draw one continuous bar across the whole pick, like the CLI's aggregate
-            // bar: files run one at a time, so overall = (done*100 + current)/total.
-            this.jProgressBar.setValue((this.QueueIndex * 100 + progress) / this.Queue.length);
-            if (progress == 100) {
-                this.setCursor(null);
-                this.jButton_Cancel.setEnabled(false);
-                this.setTitle(this.Name);   // StartNext re-stamps the counter if the queue continues
-                if (this.jTabbedPane.getSelectedIndex() == 0) {
-                    if (this.EncSen.isCanceled()) {
-                        this.jTabbedPane.setEnabled(true);
-                        this.DecryptingButton.setEnabled(false);
-                        this.EncSen = null;
-                    }
-                    else if (this.EncSen.NoEnoughFreeSpace()) {
-                        this.setEnabled(false);
-                        this.jDialog_NoEnoughFreeSpace.setVisible(true);
-                        this.EncSen = null;
-                    }
-                    else {
-                        if (this.EncSen.deleteError != null)   // encryption succeeded; only the wipe failed
-                            JOptionPane.showMessageDialog(this,
-                                    "Encrypted, but the original could not be deleted:\n" + this.EncSen.deleteError.getMessage(),
-                                    this.Name, JOptionPane.WARNING_MESSAGE);
-                        if (++this.QueueIndex < this.Queue.length) {   // more picked files: run the next one
-                            this.EncSen = null;
-                            this.StartNext();
-                            return;
-                        }
-                        this.jCheckBox_DeleteOriginal.setSelected(false);
-                        this.setEnabled(false);
-                        this.jDialog_Done.setVisible(true);
-                    }
-                }
-                else {
-                    if (this.DecSen.isCanceled()) {
-                        this.jTabbedPane.setEnabled(true);
-                        this.EncryptingButton.setEnabled(false);
-                        if (this.jCheckBox_OpenFile.isSelected()) {
-                            this.jCheckBox_OpenFile.setSelected(false);
-                        }
-                        this.DecSen = null;
-                    }
-                    else if (this.DecSen.WrongPassword()) {
-                        this.setEnabled(false);
-                        this.jDialog_WrongPassword.setVisible(true);
-                        if (this.jCheckBox_OpenFile.isSelected()) 
-                            this.jCheckBox_OpenFile.setSelected(false);
-                        this.DecSen = null;
-                    }
-                    else if (this.DecSen.NoEnoughFreeSpace()) {
-                        this.setEnabled(false);
-                        this.jDialog_NoEnoughFreeSpace.setVisible(true);
-                        if (this.jCheckBox_OpenFile.isSelected()) 
-                            this.jCheckBox_OpenFile.setSelected(false);
-                        this.DecSen = null;
-                    }
-                    else {
-                        if (++this.QueueIndex < this.Queue.length) {   // more picked files: run the next one
-                            this.DecSen = null;
-                            this.StartNext();
-                            return;
-                        }
-                        this.setEnabled(false);
-                        if (this.jCheckBox_OpenFile.isSelected()) {
-                            this.jCheckBox_OpenFile.setSelected(false);
-                            this.EncryptingButton.setEnabled(false);
-                            this.jTabbedPane.setEnabled(true);
-                            this.setEnabled(true);
-                            this.DecSen = null;
-                        } 
-                        else 
-                            this.jDialog_Done.setVisible(true);
-                    }
-                }
+    private void Finished(BatchRun.Result[] results) {
+        boolean encrypting = this.jTabbedPane.getSelectedIndex() == 0;
+        boolean opened = !encrypting && this.jCheckBox_OpenFile.isSelected();
+        this.batch = null;
+        this.setCursor(null);
+        this.jButton_Cancel.setEnabled(false);
+        this.setTitle(this.Name);
+        if (opened)
+            this.jCheckBox_OpenFile.setSelected(false);
+
+        if (results == null) {   // a worker failed outright instead of reporting an outcome
+            this.jTabbedPane.setEnabled(true);
+            JOptionPane.showMessageDialog(this, "The run failed unexpectedly.",
+                    this.Name, JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        int succeeded = 0, cancelled = 0, wrongPassword = 0, noSpace = 0;
+        List<String> problems = new ArrayList<>();
+        for (BatchRun.Result r : results) {
+            switch (r.status) {
+                case OK:
+                    succeeded++;
+                    if (r.deleteError != null)   // encryption succeeded; only the wipe failed
+                        problems.add(MainFrame.Describe(r));
+                    continue;
+                case CANCELLED:
+                    cancelled++;
+                    break;
+                case WRONG_PASSWORD:
+                    wrongPassword++;
+                    break;
+                case NO_SPACE:
+                    noSpace++;
+                    break;
+                default:
+                    break;
             }
-            else if (progress > 0 && !this.jButton_Cancel.isEnabled()) 
-                this.jButton_Cancel.setEnabled(true);
+            problems.add(MainFrame.Describe(r));
+        }
+        if (wrongPassword > 0)
+            this.DecryptingPassword.setText("");   // as the wrong-password dialog has always done
+        if (encrypting && cancelled == 0)
+            this.jCheckBox_DeleteOriginal.setSelected(false);   // a destructive option is never left armed
+
+        if (problems.isEmpty()) {
+            if (opened) {   // the files are already on screen; a "done" box on top of them is noise
+                this.jTabbedPane.setEnabled(true);
+                this.EncryptingButton.setEnabled(false);
+                return;
+            }
+            this.setEnabled(false);
+            this.jDialog_Done.setVisible(true);
+            return;
+        }
+        if (results.length == 1) {   // one file keeps its dedicated dialog, as before
+            if (wrongPassword == 1) {
+                this.setEnabled(false);
+                this.jDialog_WrongPassword.setVisible(true);
+                return;
+            }
+            if (noSpace == 1) {
+                this.setEnabled(false);
+                this.jDialog_NoEnoughFreeSpace.setVisible(true);
+                return;
+            }
+            if (cancelled == 1) {
+                this.jTabbedPane.setEnabled(true);
+                (encrypting ? this.DecryptingButton : this.EncryptingButton).setEnabled(false);
+                return;
+            }
+        }
+        this.jTabbedPane.setEnabled(true);
+        (encrypting ? this.DecryptingButton : this.EncryptingButton).setEnabled(false);
+        JOptionPane.showMessageDialog(this,
+                (encrypting ? "Encrypted " : "Decrypted ") + succeeded + " of " + results.length
+                        + " file(s).\n\n" + String.join("\n", problems),
+                this.Name, cancelled == results.length ? JOptionPane.INFORMATION_MESSAGE
+                                                       : JOptionPane.WARNING_MESSAGE);
+    }
+
+    /**
+     * The one line the summary shows for a file that did not simply succeed —
+     * the GUI's counterpart of the CLI's report line for the same outcome.
+     */
+    private static String Describe(BatchRun.Result r) {
+        switch (r.status) {
+            case MISSING:
+                return r.file.getName() + " - no longer there";
+            case CANCELLED:
+                return r.file.getName() + " - cancelled";
+            case NO_SPACE:
+                return r.file.getName() + " - not enough free space";
+            case WRONG_PASSWORD:
+                return r.file.getName() + " - wrong password, or corrupted/tampered file";
+            default:   // OK, but the requested wipe of the original failed
+                return r.file.getName() + " - encrypted, but the original could not be deleted: "
+                        + r.deleteError.getMessage();
         }
     }
     // Variables declaration - do not modify//GEN-BEGIN:variables

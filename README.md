@@ -18,11 +18,11 @@ Cryptor is a Java Swing desktop application that encrypts any file into a passwo
 - **Encrypt-then-MAC integrity** — an HMAC-SHA256 tag over the salt and the whole ciphertext is appended to the `.cr`, keyed separately from the substitution via `SHA-256(masterKey ‖ "mac")`. *Advantage:* a tampered or corrupted file is caught instead of decrypting to silent garbage, and the tag is checked *before* any of the file is interpreted, so a forged `.cr` never reaches the header decoder.
 - **Exact wrong-password detection** — a wrong password derives a different MAC key, so the tag cannot match. *Advantage:* a typo reports itself rather than writing a broken file over your data — and unlike the old header-parse check, the answer is conclusive rather than probabilistic (that check is kept as a second line behind the MAC).
 - **No default password** — encryption refuses an empty password rather than falling back to a built-in one. *Advantage:* nothing is ever encrypted under a key that anyone with a copy of the program already knows.
-- **Background processing** — encryption/decryption runs on worker threads with a progress bar and cancel support. *Advantage:* the UI stays responsive and a long run on a big file can be stopped.
+- **Parallel batches in both front ends** — a multi-file pick runs up to 3 files at once on a `ForkJoinPool`, with one aggregate progress bar and a cancel that stops the whole batch. The GUI and the CLI drive the same `Tools.BatchRun`, so a dropped folder is no slower than the same folder under `-r`. *Advantage:* the UI stays responsive, a long run can be stopped, and a folder finishes in about a third of the time it used to take in the GUI.
 - **Streamed I/O** — the file moves through 1024-byte blocks and bounded queues, never fully into memory. *Advantage:* file size is limited by disk, not RAM.
 - **Safety checks** — refuses to start without enough free disk space; can optionally open the output when done. *Advantage:* no half-written output from a full disk.
 - **Optional deep-delete of the original** — encryption can wipe the source once the `.cr` is safely written (GUI checkbox, or `-d` on the CLI): the plaintext is overwritten with random bytes and flushed to disk before the file is unlinked. *Advantage:* the cleartext isn't left behind for an undelete tool. *Caveat:* on an SSD or copy-on-write filesystem, wear-levelling means the overwrite may not reach the original blocks — this defeats casual recovery, not forensic recovery on flash.
-- **Command-line mode** — `Cli.Main encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. A batch runs its files concurrently on a `ForkJoinPool` sized to the CPU. *Advantage:* scriptable and easy to fuzz/benchmark; multi-file runs spread across the available cores; it drives the *same* worker classes as the UI, so there is one cipher to trust, not two.
+- **Command-line mode** — `Cli.Main encrypt|decrypt <file> [<file> ...]` runs headless, no GUI, prompting for the password without echo (once for a whole batch of files) and drawing a progress bar as it goes. *Advantage:* scriptable and easy to fuzz/benchmark; it drives the *same* batch engine and worker classes as the UI, so there is one cipher to trust, not two.
 - **Drag and drop** — files or folders can be dropped straight onto the window; the active tab filters them (Decrypt takes only `.cr`, Encrypt takes everything else) and a dropped folder is walked recursively. *Advantage:* a whole folder is queued in one gesture, and the filtering makes it impossible to hand a file to the wrong direction by accident.
 - **Cross-platform paths** — output paths are built with `File.separator` instead of a hardcoded `\`. *Advantage:* the jar and CLI run on Linux and macOS, not just Windows.
 
@@ -96,11 +96,10 @@ This part is solid:
 | `src/Cli/` | Headless command-line front end (`Cli` package), driving the same workers as the GUI |
 | `src/Cli/Main.java` | CLI entry point; wiring only — parse, resolve, confirm, ask, run, report — and the one place that sets an exit code |
 | `src/Cli/Options.java` | One parsed command line (mode, flags, paths) and the directory expansion those flags imply; raises `UsageException` instead of exiting |
-| `src/Cli/Batch.java` | Runs a batch: owns the thread pool, the shared bar, and the Ctrl+C hook |
-| `src/Cli/FileTask.java` | One file's share of a batch; runs a worker and keeps its own outcome |
+| `src/Cli/Batch.java` | The CLI's front end onto `BatchRun`: the stderr bar, the Ctrl+C hook, and the one report line per outcome |
 | `src/Cli/ProgressBar.java` | Thread-safe aggregate progress bar drawn on stderr |
 | `src/Cli/Prompt.java` | One interactive question (password without echo, or a yes/no), from the console or piped stdin |
-| `src/MainFrame.java` | Swing UI: Encrypt / Decrypt / About tabs, file chooser, progress, dialogs |
+| `src/MainFrame.java` | Swing UI: Encrypt / Decrypt / About tabs, file chooser, progress, dialogs; drives the same `BatchRun` as the CLI |
 | `src/Encryption/` | The cipher and I/O engine (`Encryption` package, see below) |
 | `src/Encryption/Senario.java` | Abstract base for both workers; holds the shared bit-packing state and the encode/decode logic that is identical in both directions |
 | `src/Encryption/EncryptingSenario.java` | Encryption worker (file → `.cr`); extends `Senario` |
@@ -108,11 +107,13 @@ This part is solid:
 | `src/Encryption/BlockIO.java` | Abstract base for both I/O workers; holds the bounded block queue, the EOF sentinel and the cancellation plumbing they share |
 | `src/Encryption/FileReader.java` / `src/Encryption/FileWriter.java` | Threaded block I/O with progress and cancellation; extend `BlockIO`. `FileReader` owns the source file, so it also securely wipes it (via `SecureDelete`) once encryption asks for a deep delete |
 | `src/Encryption/Order.java` | Password-derived permutations, PBKDF2 key derivation, per-block sub-keys and the MAC key |
+| `src/Tools/BatchRun.java` | Runs a batch of files in parallel for either front end: owns the pool, the aggregate progress and the cancellation, and reports one outcome per file |
 | `src/Tools/` | `InputParameters` (cipher config and lookup tables), `ExchangeMove` (swaps), `SecureDelete` (best-effort deep-delete of the original after encryption), `FileScan` (expands dropped/argument paths into the files to work on, shared by the GUI and CLI) |
 | `InputParameters` | Required data file, loaded at startup from the working directory |
 | `test/RoundTripTest.java` | Standalone encrypt → decrypt round-trip check |
 | `test/CryptanalysisTest.java` | Cryptanalysis smoke tests [1]–[7] (avalanche, periodicity, uniformity, correlation) plus attacks [A]–[C] (16-step keyspace, KDF cost, known-plaintext grid-order recovery) |
 | `test/BenchmarkTest.java` | Encrypt/decrypt throughput benchmark across file sizes |
+| `test/BatchRunTest.java` | Batch engine check: parallel round trip, per-file outcomes, and cancellation |
 | `test.sh` | Compiles and runs one test class (`RoundTripTest` by default); see [Testing](#testing) |
 | `dist/` | Build output produced by `ant jar` (`Cryptor.jar` / `Cryptor.exe`), tracked so the jar is runnable straight from a clone |
 
