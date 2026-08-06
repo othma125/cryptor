@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.stream.IntStream;
 
 /**
  * Attacks the cipher with a couple of standard "is it broken?" cryptanalysis
@@ -96,23 +97,34 @@ public class CryptanalysisTest {
         Random rnd = new Random(1);
         byte[] salt = new byte[InputParameters.saltLength];   // fixed salt: measure plaintext diffusion under one key
         Arrays.fill(salt, (byte) 0x2A);
+        // Draw all the plaintexts up front, off the shared Random, so the trials
+        // stay bit-identical no matter what order the threads run them in.
+        byte[][] bases = new byte[trials][], variants = new byte[trials][];
+        for (int t = 0; t < trials; t++) {
+            bases[t] = new byte[size];
+            rnd.nextBytes(bases[t]);
+            variants[t] = bases[t].clone();
+            int bit = rnd.nextInt(flipZone * 8);   // early flip: whole file is downstream
+            variants[t][bit >> 3] ^= (1 << (bit & 7));
+        }
+
+        double[] fracs = new double[trials];
+        boolean[] shifted = new boolean[trials];
+        IntStream.range(0, trials).parallel().forEach(t -> {
+            byte[] a = enc(bases[t], salt, PW), b = enc(variants[t], salt, PW);
+            fracs[t] = diffFraction(a, b);
+            shifted[t] = a.length != b.length;
+        });
+
         double sum = 0, min = 1, max = 0;
         int local = 0, phaseShift = 0;   // local heal (<5% changed) vs length-changing shift
         for (int t = 0; t < trials; t++) {
-            byte[] base = new byte[size];
-            rnd.nextBytes(base);
-            byte[] variant = base.clone();
-            int bit = rnd.nextInt(flipZone * 8);   // early flip: whole file is downstream
-            variant[bit >> 3] ^= (1 << (bit & 7));
-
-            byte[] a = encrypt(base, salt), b = encrypt(variant, salt);
-            double frac = diffFraction(a, b);
-            sum += frac;
-            min = Math.min(min, frac);
-            max = Math.max(max, frac);
-            if (frac < 0.05)
+            sum += fracs[t];
+            min = Math.min(min, fracs[t]);
+            max = Math.max(max, fracs[t]);
+            if (fracs[t] < 0.05)
                 local++;
-            if (a.length != b.length)
+            if (shifted[t])
                 phaseShift++;
         }
         double mean = sum / trials;
@@ -144,20 +156,26 @@ public class CryptanalysisTest {
         new Random(2).nextBytes(rndPlain);
         double baseline = entropy(encrypt(rndPlain));  // calibration: no structure to leak
 
+        double[] entropies = new double[keys];
+        int[] periods = new int[keys];
+        IntStream.range(0, keys).parallel().forEach(k -> {
+            byte[] salt = new byte[InputParameters.saltLength];
+            Arrays.fill(salt, (byte) k);                    // one distinct, fixed key per iteration
+            byte[] c = enc(new byte[size], salt, PW);       // all 0x00
+            entropies[k] = entropy(c);
+            periods[k] = period(c, 128);                    // skip header transient
+        });
+
+        // reduced in key order, so "first period found" stays reproducible
         int collapsed = 0, worstPeriod = -1;
         double worst = 9;
         for (int k = 0; k < keys; k++) {
-            byte[] salt = new byte[InputParameters.saltLength];
-            Arrays.fill(salt, (byte) k);               // one distinct, fixed key per iteration
-            byte[] c = encrypt(new byte[size], salt);  // all 0x00
-            double e = entropy(c);
-            int p = period(c, 128);                    // skip header transient
-            if (p > 0 || e < 7.0) {
+            if (periods[k] > 0 || entropies[k] < 7.0) {
                 collapsed++;
-                if (p > 0 && worstPeriod < 0)
-                    worstPeriod = p;
+                if (periods[k] > 0 && worstPeriod < 0)
+                    worstPeriod = periods[k];
             }
-            worst = Math.min(worst, e);
+            worst = Math.min(worst, entropies[k]);
         }
         System.out.println();
         System.out.println("[2] Constant input (" + size + " bytes of 0x00, swept over " + keys + " fixed keys)");
@@ -194,14 +212,21 @@ public class CryptanalysisTest {
         Random rnd = new Random(11);
         byte[] salt = new byte[InputParameters.saltLength];
         Arrays.fill(salt, (byte) 0x2A);
-        double sum = 0, min = 1, max = 0;
+        byte[][] bases = new byte[trials][], variants = new byte[trials][];
         for (int t = 0; t < trials; t++) {
-            byte[] base = new byte[size];
-            rnd.nextBytes(base);
-            byte[] variant = base.clone();
+            bases[t] = new byte[size];
+            rnd.nextBytes(bases[t]);
+            variants[t] = bases[t].clone();
             int bit = rnd.nextInt(flipZone * 8);
-            variant[bit >> 3] ^= (1 << (bit & 7));
-            double frac = bitDiffFraction(encrypt(base, salt), encrypt(variant, salt));
+            variants[t][bit >> 3] ^= (1 << (bit & 7));
+        }
+
+        double[] fracs = new double[trials];
+        IntStream.range(0, trials).parallel().forEach(t ->
+                fracs[t] = bitDiffFraction(enc(bases[t], salt, PW), enc(variants[t], salt, PW)));
+
+        double sum = 0, min = 1, max = 0;
+        for (double frac : fracs) {
             sum += frac;
             min = Math.min(min, frac);
             max = Math.max(max, frac);
@@ -231,15 +256,22 @@ public class CryptanalysisTest {
         Random rnd = new Random(12);
         byte[] salt = new byte[InputParameters.saltLength];
         Arrays.fill(salt, (byte) 0x2A);   // fixed salt: isolate the password's effect
-        double sum = 0, min = 1, max = 0;
+        byte[][] plains = new byte[trials][];
+        char[][] pws = new char[trials][];
         for (int t = 0; t < trials; t++) {
-            byte[] p = new byte[size];
-            rnd.nextBytes(p);
-            char[] pw = "password".toCharArray();
-            char[] pw2 = pw.clone();
+            plains[t] = new byte[size];
+            rnd.nextBytes(plains[t]);
+            pws[t] = "password".toCharArray();
             int bit = rnd.nextInt(7);              // flip one bit of one character
-            pw2[rnd.nextInt(pw2.length)] ^= (1 << bit);
-            double frac = bitDiffFraction(encrypt(p, salt, pw), encrypt(p, salt, pw2));
+            pws[t][rnd.nextInt(pws[t].length)] ^= (1 << bit);
+        }
+
+        double[] fracs = new double[trials];
+        IntStream.range(0, trials).parallel().forEach(t ->
+                fracs[t] = bitDiffFraction(enc(plains[t], salt, PW), enc(plains[t], salt, pws[t])));
+
+        double sum = 0, min = 1, max = 0;
+        for (double frac : fracs) {
             sum += frac;
             min = Math.min(min, frac);
             max = Math.max(max, frac);
@@ -665,6 +697,20 @@ public class CryptanalysisTest {
     }
 
     private interface EncryptingSenarioFactory { EncryptingSenario make(File plain); }
+
+    /**
+     * {@link #encrypt(byte[], byte[], char[])} without the checked exception, so
+     * the trial loops above can run as parallel streams. Each call works in its
+     * own temp directory, and the {@code InputParameters} statics are published
+     * before {@code main} starts, so the trials are independent.
+     */
+    private static byte[] enc(byte[] plaintext, byte[] salt, char[] pw) {
+        try {
+            return encrypt(plaintext, salt, pw);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     private static byte[] run(byte[] plaintext, EncryptingSenarioFactory factory) throws Exception {
         File dir = Files.createTempDirectory("cryptor-ca").toFile();

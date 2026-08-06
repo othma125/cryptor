@@ -5,6 +5,8 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 /**
  * Standalone encrypt -&gt; decrypt round-trip check after the {@code BigInteger} swap.
@@ -30,43 +32,41 @@ public class RoundTripTest {
             new char[0]
         };
 
-        int cases = 0, failures = 0;
-        for (char[] pw : passwords)
-            for (int size : sizes) {
-                cases++;
-                try {
-                    roundTrip(size, pw);
-                } catch (AssertionError e) {
-                    failures++;
-                    System.out.println("FAIL " + e.getMessage());
-                }
-            }
+        AtomicInteger failures = new AtomicInteger();
 
-        cases++;
-        try {
-            cancelMidFlight();
-        } catch (AssertionError e) {
-            failures++;
-            System.out.println("FAIL " + e.getMessage());
-        }
+        // Each case works in its own temp directory and the InputParameters
+        // statics are fully published before we get here (its constructor joins
+        // the default-order thread), so the round-trips are independent.
+        // ponytail: common ForkJoinPool, size the pool only if a case ever gets
+        // heavy enough to starve the others.
+        IntStream.range(0, passwords.length * sizes.length).parallel().forEach(i ->
+                check(failures, () -> roundTrip(sizes[i % sizes.length], passwords[i / sizes.length])));
 
-        cases++;
-        try {
-            encryptionIsRandomized();
-        } catch (AssertionError e) {
-            failures++;
-            System.out.println("FAIL " + e.getMessage());
-        }
+        // kept serial: cancelMidFlight is timing-sensitive and allocates 20 MB
+        check(failures, RoundTripTest::cancelMidFlight);
+        check(failures, RoundTripTest::encryptionIsRandomized);
+        check(failures, RoundTripTest::tamperIsDetected);
 
-        cases++;
-        try {
-            tamperIsDetected();
-        } catch (AssertionError e) {
-            failures++;
-            System.out.println("FAIL " + e.getMessage());
-        }
-        System.out.println((failures == 0 ? "OK: " : "FAILURES: " + failures + "/")
+        int cases = passwords.length * sizes.length + 3;
+        System.out.println((failures.get() == 0 ? "OK: " : "FAILURES: " + failures.get() + "/")
                 + cases + " round-trips.");
+    }
+
+    private interface Case {
+        void run() throws Exception;
+    }
+
+    /** Runs one case, counting an assertion failure or an unexpected exception. */
+    private static void check(AtomicInteger failures, Case c) {
+        try {
+            c.run();
+        } catch (AssertionError e) {
+            failures.incrementAndGet();
+            System.out.println("FAIL " + e.getMessage());
+        } catch (Exception e) {
+            failures.incrementAndGet();
+            System.out.println("ERROR " + e);
+        }
     }
 
     private static void roundTrip(int size, char[] password) throws Exception {
