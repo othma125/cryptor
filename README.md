@@ -136,6 +136,8 @@ To run the GUI straight from source without Ant, use `./runUI.sh` (it runs `./co
 
 The **Browse** button takes multiple files (ctrl/shift-click). They run one after another under the single password you entered, the title bar shows `Cryptor (3/7)` as it goes, and the Done dialog appears once at the end. Cancel, a wrong password, or a full disk stops the queue where it is. Empty files and directories are dropped from the selection — for whole directories, use the CLI's `-r`.
 
+**Keyboard:** with nothing picked, **Enter** opens the active tab's Browse dialog. In the password fields Enter moves from the first encrypting password to the second, and from the last field of either tab it starts the run (only once files are picked). **Tab** follows the same path — password(s), then the run button, which Enter presses. The progress bar clears back to empty when a run ends.
+
 ### Command-line mode
 
 For scripting or headless use, `Cli.Main` encrypts/decrypts without the GUI:

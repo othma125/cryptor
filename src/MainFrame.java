@@ -69,6 +69,29 @@ public class MainFrame extends javax.swing.JFrame {
         this.EncryptingPassword1.setText("");
         this.EncryptingPassword2.setText("");
         this.DecryptingPassword.setText("");
+        // Tab walks a whole entry: password(s), then the run button — which the
+        // system look-and-feel makes the default button, so Enter presses it. The
+        // panels' layouts put the buttons above the fields, so the default
+        // traversal would tab to the button too early; these pin the order.
+        // ponytail: three deprecated setters beat a custom FocusTraversalPolicy.
+        this.EncryptingPassword1.setNextFocusableComponent(this.EncryptingPassword2);
+        this.EncryptingPassword2.setNextFocusableComponent(this.EncryptingButton);
+        this.DecryptingPassword.setNextFocusableComponent(this.DecryptingButton);
+        // Enter in a field does the same hop, so an entry can be typed straight
+        // through; the button's enabled state is the guard: no files picked, no run.
+        this.EncryptingPassword1.addActionListener(e -> this.EncryptingPassword2.requestFocusInWindow());
+        this.EncryptingPassword2.addActionListener(e -> {
+            if (this.EncryptingButton.isEnabled()) this.EncryptingButtonActionPerformed(e);
+        });
+        this.DecryptingPassword.addActionListener(e -> {
+            if (this.DecryptingButton.isEnabled()) this.DecryptingButtonActionPerformed(e);
+        });
+        // Nothing is picked yet at start-up, so Enter should mean Browse; the field's
+        // own Enter binding still wins while a password field has the focus.
+        this.getRootPane().setDefaultButton(this.EncryptingBrowserButton);
+        this.jTabbedPane.addChangeListener(e -> this.getRootPane().setDefaultButton(
+                this.jTabbedPane.getSelectedIndex() == 0 ? this.EncryptingBrowserButton
+                                                         : this.DecryptingBrowserButton));
         this.jDialog_PasswordsDoNotMatch.setTitle(this.Name);
         this.jDialog_PasswordsDoNotMatch.pack();
         this.jDialog_PasswordsDoNotMatch.setLocationRelativeTo(this);
@@ -901,6 +924,8 @@ public class MainFrame extends javax.swing.JFrame {
         boolean opened = !encrypting && this.jCheckBox_OpenFile.isSelected();
         this.batch = null;
         this.setCursor(null);
+        this.jProgressBar.setValue(0);   // the run is over; an empty bar is the idle state
+
         this.jButton_Cancel.setEnabled(false);
         this.setTitle(this.Name);
         if (opened)
