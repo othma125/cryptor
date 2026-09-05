@@ -12,8 +12,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.AbstractAction;
+import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.TransferHandler;
 import javax.swing.filechooser.FileFilter;
@@ -92,6 +95,8 @@ public class MainFrame extends javax.swing.JFrame {
         this.jTabbedPane.addChangeListener(e -> this.getRootPane().setDefaultButton(
                 this.jTabbedPane.getSelectedIndex() == 0 ? this.EncryptingBrowserButton
                                                          : this.DecryptingBrowserButton));
+        this.BindTabArrow("LEFT", -1);
+        this.BindTabArrow("RIGHT", 1);
         this.jDialog_PasswordsDoNotMatch.setTitle(this.Name);
         this.jDialog_PasswordsDoNotMatch.pack();
         this.jDialog_PasswordsDoNotMatch.setLocationRelativeTo(this);
@@ -115,6 +120,29 @@ public class MainFrame extends javax.swing.JFrame {
             this.jDialog_InputParameterFileNotFound.setVisible(true);
             return;
         }
+    }
+
+    /**
+     * Binds an arrow key to flip through the tabs from anywhere in the window.
+     * The binding is window-wide, so a focused text field still gets the arrow
+     * first and the caret keeps working; the tabs are left alone mid-run, as
+     * clicking them is.
+     *
+     * @param key  the key name, {@code "LEFT"} or {@code "RIGHT"}
+     * @param step -1 for the previous tab, +1 for the next, wrapping around
+     */
+    private void BindTabArrow(String key, int step) {
+        this.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key), key);
+        this.getRootPane().getActionMap().put(key, new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                if (!MainFrame.this.jTabbedPane.isEnabled())
+                    return;
+                int count = MainFrame.this.jTabbedPane.getTabCount();
+                MainFrame.this.jTabbedPane.setSelectedIndex(
+                        (MainFrame.this.jTabbedPane.getSelectedIndex() + step + count) % count);
+            }
+        });
     }
 
     @SuppressWarnings("unchecked")
