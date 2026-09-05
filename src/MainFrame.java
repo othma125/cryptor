@@ -3,6 +3,8 @@ import Encryption.DecryptingSenario;
 import Encryption.EncryptingSenario;
 import Tools.BatchRun;
 import Tools.InputParameters;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Image;
 import java.awt.Toolkit;
@@ -15,6 +17,8 @@ import java.util.List;
 import javax.swing.AbstractAction;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
+import javax.swing.JList;
+import javax.swing.JTable;
 import javax.swing.JOptionPane;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
@@ -717,6 +721,7 @@ public class MainFrame extends javax.swing.JFrame {
         });
         this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
+        SwingUtilities.invokeLater(() -> MainFrame.FocusFileList(this.FC));   // runs once the modal chooser is up
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File[] picked = MainFrame.NonEmpty(this.FC.getSelectedFiles());
             if (picked.length == 0)
@@ -777,6 +782,7 @@ public class MainFrame extends javax.swing.JFrame {
             this.FC.resetChoosableFileFilters();   // drop the decrypt tab's .cr filter
         this.FC.setMultiSelectionEnabled(true);
         this.FC.setCurrentDirectory(new File(this.DesktopPath));
+        SwingUtilities.invokeLater(() -> MainFrame.FocusFileList(this.FC));   // runs once the modal chooser is up
         if (this.FC.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File[] picked = MainFrame.NonEmpty(this.FC.getSelectedFiles());
             if (picked.length == 0)
@@ -851,6 +857,24 @@ public class MainFrame extends javax.swing.JFrame {
         }
         this.setTitle(files.length == 1 ? this.Name + " - " + files[0].getName()
                                         : this.Name + " - " + files.length + " files");
+    }
+
+    /**
+     * Puts the focus on the chooser's file list, which opens focused on the
+     * file-name field, so the up/down arrows walk the files straight away. The
+     * list is a {@link JList} in the list view and a {@link JTable} in the
+     * details view, hence both.
+     *
+     * @return {@code true} once a list has been found and focused
+     */
+    private static boolean FocusFileList(Container parent) {
+        for (Component child : parent.getComponents()) {
+            if (child instanceof JList || child instanceof JTable)
+                return child.requestFocusInWindow();
+            if (child instanceof Container && MainFrame.FocusFileList((Container) child))
+                return true;
+        }
+        return false;
     }
 
     /**
